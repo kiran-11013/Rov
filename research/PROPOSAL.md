@@ -1,166 +1,161 @@
-# The Half-Life of VLM Decisions in Robot Controllers
+# Is #7 Still There? Acting on Expiring Object Memory for Drone Navigation to Remembered Objects
 
-**One line:** VLM-driven robots must decide when to re-ask their VLM. We measure how long VLM-set control decisions actually stay valid, why they change, what acting on a stale one costs physically, and how well each kind of re-query trigger catches the changes that matter.
+**One line:** A drone maps a space and gives every object an ID. Later you say *"go to #7"* or *"go to the chair by the door"*. By then #7 may have moved. We measure how fast object memories expire and build a drone that decides whether to trust, verify or search before it flies.
 
-**Status:** v5, the canonical proposal. Consolidates four rounds of hostile review (history in `README.md`).
+**Status:** v6 draft (pre-audit). Replaces v5 (`proposal_v5_halflife.md`); v5's "when to re-ask the VLM" becomes the *verify* action here.
 **Author:** M.Tech, IIT Hyderabad · **Target:** IROS 2027 (primary), RA-L (alternative)
-**Platform:** 1–2 kg PX4 quadrotor, ZED stereo, mono cameras, LiDAR, IMU, AprilTags, RTX 4090, Jetson Orin
+**Platform:** 1–2 kg PX4 quadrotor, ZED stereo (positional tracking, spatial mapping, object and body tracking), mono cameras, LiDAR, IMU, AprilTags / mocap for ground truth, RTX 4090, Jetson Orin
 
 ---
 
 ## Abstract
-Vision-language models (VLMs) increasingly set parameters inside robot control loops: safety margins, planner weights, impedance gains. Because VLM calls are slow, every such system embeds an assumption about how often the VLM must be re-queried. Fixed rates, scene-change triggers, embedding gates and dual-system architectures are all in use, but the rate and causes of VLM decision change have never been characterised for robot controllers. We record ≈ 300 drone-height RGB-D episodes and replay two VLM-driven controllers with two independent VLM families on every frame. We estimate the **survival curve ("half-life")** of VLM decisions and attribute each change to one of four causes: geometric change, semantic change, sampling noise and perceptual jitter. We use a factorial image × geometry design for this. The physical cost of staleness is measured through branching closed-loop rollouts with a latency-and-queue model, calibrated on 72 real flights. We then rank trigger families at matched call rates by harmful-change recall and energy. The result tells practitioners how much of their VLM compute buys safety, how much buys noise, and where learned gates are worth paying for.
+Language-commanded robots increasingly navigate to objects stored in a semantic map. Between mapping and command, objects get moved, and the robot's memory silently expires. Existing dynamic scene graphs update an object only when the robot sees it change, and aerial object-goal navigation searches for objects never seen before. We study the gap between the two: **navigating to a specific remembered object whose current location is uncertain**.
+- We measure per-class **object-memory half-lives** from weeks of ground-truth logs in a real lab, and test whether language models can predict them for unseen classes.
+- We build a drone that, given a command by ID or by language, estimates the probability that its memory is still valid. It then picks the action with the lowest expected time: **trust** (fly to the last-known position), **verify** (re-observe from a vantage point first) or **search** (belief-guided). It re-identifies the object to keep its ID stable.
+- Language commands are grounded to IDs with calibrated confidence; the drone **asks for clarification** when unsure.
 
-## 1. Origin (why this line of work)
-This started as an audit of **ImpedanceGPT** (IROS 2025, arXiv 2503.02723). In that paper a VLM + RAG system picks impedance parameters for a drone swarm. The audit found five problems:
-1. The VLM runs **once, offline**, taking 5–8 s, then picks 1 of 20 scenarios.
-2. The 20 scenarios collapse to roughly two parameter sets, so retrieval reduces to a hard/soft switch.
-3. In the released code, the obstacle type is passed via the **filename**, not inferred by the VLM.
-4. There are no baselines, no ablations, ~21 trials, and only peak speed is reported as the result.
-5. The core open question is never asked: **when, and how often, does a VLM-in-the-loop controller need to ask its VLM again?**
+Phase 2 extends the system to moving targets (track and intercept).
+
+## 1. Origin
+This line of work began with an audit of **ImpedanceGPT** (IROS 2025, arXiv 2503.02723):
+- The VLM ran once offline and picked 1 of 20 near-duplicate scenarios.
+- The obstacle type was passed via the filename.
+- There were no baselines.
+
+Four hostile reviews of follow-up ideas (audit trail in §11) taught three lessons:
+1. Do not claim novelty that prior work already holds.
+2. Define harm and success by **physical ground truth**, not by quantities the system itself computes.
+3. Design so that **any outcome is publishable**.
 
 ## 2. Problem and gap
-- **In use today:** VLM-set control parameters (AlphaAdj: VLM → CBF conservativeness; EAMP: VLM → planner parameters). Re-query policies range from fixed rate to event triggers (PC-SET, React-When-You-Need-To), embedding gates (AESOP), latency-tolerant designs (Slow Brain, Fast Planner) and adaptive invocation (ProAct-VLM).
-- **Already known (video analytics):** run a reference model on every frame and learn cheap filters against it (NoScope, Reducto, Chameleon, FilterForward).
-- **Gap:** no one has measured, **for robot controllers**:
-  - (a) how long VLM-set parameters stay behaviourally valid;
-  - (b) what fraction of changes are noise rather than real change;
-  - (c) what staleness costs **physically** in closed loop, including VLM latency;
-  - (d) how trigger families compare at matched call rates, separately on geometry-visible and semantic-only events.
+| Area | Examples | Covers | Missing |
+|---|---|---|---|
+| Dynamic open-vocabulary scene graphs | DovSG (RA-L 2025), DynaMem, LOST-3DSG | Update the map **when change is observed** | What to do about objects **not seen recently** |
+| Aerial object-goal navigation | UAV-ON, AirHunt, spatial belief fields (2026) | Finding objects **never seen** | Going to a **specific remembered instance** |
+| Lifelong / probabilistic object maps | Stationarity scores, decaying object maps | Confidence decay over time | Decay rates **hand-set**; ground robots; no decision policy for a flying robot; no language grounding |
+| Motion-aware semantic maps | Vision–Language–Motion Maps (2607.16173) | A queryable motion attribute in the map | **Closest work — must be read in full and positioned against** |
 
-**What differs from video analytics:**
-1. The "query result" is a **control parameter**, judged by **behavioural** equivalence, not label equality.
-2. The cost is **physical** (clearance, intrusion), not query accuracy.
-3. The reference model itself **is noisy** (sampling, jitter), and that noise is a measured cause.
-4. Semantic changes can have **small pixel deltas** (person ↔ mannequin), which is exactly where frame differencing should fail.
+**Gap:** no work measures how fast object memories expire per class in real spaces, and then uses those rates to decide, at command time, whether a drone should trust, verify or search for a specific remembered object, with commands given by ID or by language.
 
 ## 3. Research questions
 | | Question | Primary output |
 |---|---|---|
-| **RQ1 Half-life** | How long do VLM-set decisions stay valid in natural footage, and what share of changes come from geometry, semantics, sampling noise and perceptual jitter (plus interaction)? | Kaplan–Meier survival curves per host × VLM, split by cause |
-| **RQ2 Consequence** | What does acting on a stale decision cost in closed loop, given realistic VLM latency, and does a well-designed host absorb it? | Δ min clearance and proxemic-intrusion curves (0.6–2.0 m sweep); efficiency cost (path time, energy) |
-| **RQ3 Triggers** | At matched call rates, which trigger families catch the harmful changes, on geometry-visible vs semantic-only events, and at what energy? | Recall vs call-rate vs joules Pareto; **one pre-registered primary test** |
+| **RQ1 Memory half-life** | How long does each object class stay where it was last seen in a real, in-use indoor space? Can language models predict this for unseen classes? | Kaplan–Meier survival curves per class; zero-shot half-life prediction error |
+| **RQ2 Acting on expiring memory** | Does a half-life-aware trust / verify / search policy beat always-trust and always-search on success and time? | Success within 1 m of the **true current** position; time-to-success; wasted trips |
+| **RQ3 Grounding commands** | How accurately can language commands be resolved to map IDs with calibrated confidence, and how often must the drone ask? | Accuracy, calibration (ECE), risk–coverage, clarification rate |
 
-**Target headline (must survive any outcome):**
-> "X % of VLM decision flips are noise; Y % are behaviourally irrelevant; of the Z % that matter, a geometric heuristic catches W % at 0.5 Hz. The semantic-only residual is where learned gates earn their compute."
+**Headline we aim for:**
+> "Chairs keep their place for about X minutes and people for Y seconds. Using these half-lives, the drone reaches the right object Z % more often, W % faster, than trusting its map."
 
-## 4. Method
-### 4.1 Data
-| Set | Size | Use |
-|---|---|---|
-| **Natural** | ≈ 240 handheld ZED episodes at drone height, 60 s each, 2–3 indoor environments (corridor, lab, atrium), people going about normal activity | RQ1 rates, RQ3 main ranking |
-| **Staged** | ≈ 60 episodes of counterfactual pairs: same geometry with semantics swapped (person ↔ mannequin, sign added, person picks up a ladder) and vice versa | Attribution validation, RQ3 stress test, the semantic-only stratum |
-| **Flight** | ≈ 72 paired runs (12 scripted intrusions × 3 arms × 2 repetitions), mannequin on a cart, mocap/AprilTag ground truth | Validating the replay/rollout model |
+## 4. System
+1. **Mapping.**
+   - ZED positional tracking + spatial mapping (LiDAR-aided) build the metric map.
+   - An open-vocabulary detector proposes objects; depth lifts them to 3D; instances are associated across views.
+   - Each object gets an **ID**, class, VLM-written description, position, covariance and `last_seen`.
+2. **Memory model.**
+   - P(object still at last position | class, Δt) = S_c(Δt), the survival curve estimated in RQ1.
+   - For unseen classes, the hazard is predicted zero-shot from the class name and description, then shrunk toward the nearest known class.
+   - A displacement prior (empirical: same room, near similar furniture) says where a moved object probably went.
+3. **Decision policy.** Pick the action with minimum expected time to success, given P:
+   - **Trust:** fly to the last-known position; fall back to search if absent.
+   - **Verify:** fly to a vantage point, re-observe, then commit. *(This is where v5's "when to re-ask the VLM" lives.)*
+   - **Search:** belief-weighted coverage over likely locations.
+4. **Re-identification.** Appearance embedding (e.g. DINOv2) + VLM description + spatial prior keep ID #7 = #7 after relocation. Identical-looking objects are a stress test.
+5. **Command grounding.**
+   - By ID: direct.
+   - By language: a resolver returns a probability distribution over map IDs. If the top probability < τ or the margin is small, the drone asks a clarifying question ("#7 or #9?").
+6. **Safety floor.** An always-on depth-based CBF keeps clearance from obstacles and people.
 
-Decision rate 15 Hz → ≈ 270 k frames. Natural and staged data are **never pooled** for rates.
+## 5. Experiments
+### E1 Persistence study (RQ1)
+- Fixed external cameras (not the drone) observe ≈ 30 tagged objects over **2–4 weeks** of normal lab use: chairs, carts, bags, boxes, bins, laptops, plus people.
+- Kaplan–Meier survival per class, censored at the end of observation.
+- Zero-shot prediction of class half-lives for **held-out classes**: VLM vs small local LLM vs Jev vs embedding regression.
 
-### 4.2 Hosts (two VLM-in-flight controllers)
-1. **VLM-regulated CBF safety margin**, AlphaAdj-style, including its stale-request mitigation, built on the open ASMA safety-filter code where possible.
-2. **VLM planner-parameter retuning**, EAMP-style. Its own PC-SET trigger is included as a benchmark arm.
+### E2 Command trials (RQ2)
+- ≈ 200 commands issued 1 min, 10 min, 1 h and 1 day after mapping.
+- Ground truth: the object's **true current** position from external cameras / mocap. The drone never sees the tags (placed out of its view or on the underside).
+- Moved objects arise both naturally (E1 logs) and from scripted relocations; the two are reported separately.
 
-Published prompts are used verbatim where available, with **3 prompt paraphrases per host**. If variance across paraphrases exceeds variance across hosts, that is reported as a finding.
-
-### 4.3 VLMs
-Two genuinely independent families, e.g. **Qwen2.5-VL-7B** and **InternVL3 / Gemma-3**. Run at the deployed temperature (T = 0 where hosts use it). Sampling noise is measured at each host's published temperature.
-
-### 4.4 Dense replay with latency
-- Every host × VLM × paraphrase runs on **every frame** offline (RTX 4090; ≈ 80–150 GPU-hours, to be measured in the pilot).
-- A **latency + queue model**, using latency distributions measured on Jetson Orin, turns oracle decisions into what each trigger would actually have had in hand. Staleness = trigger delay + queue + inference.
-- **Pipelined always-call** is the zero-trigger baseline.
-- Wording: "open-loop-exact" for decision sequences; closed-loop effects come only from 4.6.
-
-### 4.5 Behavioural equivalence and cause attribution
-- **Equivalence:** decisions d, d′ are equivalent if the host controller's commanded velocity under them differs by ≤ ε = 0.1 m/s over H = 2 s (sensitivity analysis over ε, H).
-- **2×2 factorial attribution:** for each non-equivalent change t → t′, query the VLM on (image_t or image_t′) × (structured geometry_t or geometry_t′). Shapley values give **geometric**, **semantic** and **interaction** shares.
-  - **Sampling noise:** resample the same input.
-  - **Perceptual jitter:** consecutive static frames.
-  - Cost ≈ 32 k extra calls.
-
-### 4.6 Physical consequence: branching rollouts
-- At each decision change, reset to the logged state and roll out a **point-mass / PX4-SITL** drone model for H ≤ 3 s under the stale vs the fresh decision.
-- Rollouts run in a ZED-reconstructed static scene with replayed human tracks.
-- **Outputs:** Δ minimum clearance; **proxemic intrusion** curves over thresholds 0.6–2.0 m (sourced numbers, e.g. 1.84 m mean preferred distance, Wögerbauer et al. 2024); efficiency cost.
-- Every harm metric is stratified into **geometry-visible** and **semantic-only** events.
-- The rollout model is calibrated on the 72 flights (predicted vs measured clearance: R², bias).
-- **Limitation:** replayed humans are non-reactive.
-
-### 4.7 Trigger benchmark (RQ3)
-| Family | Arm |
+| Arm | Description |
 |---|---|
-| Fixed rate | every k frames, randomised phase |
-| Geometric heuristic | new/lost track, label change, Δdistance / Δvelocity > θ |
-| Image-feature change | vision-encoder feature distance (React-When-You-Need-To style) |
-| Semantic event trigger | PC-SET (EAMP) |
-| Text-embedding gate | e5/MiniLM + LR; AESOP-style kNN |
-| Small local LLM | Qwen 0.5–3B yes/no logprob, temperature-scaled |
+| A1 Trust map | Always fly to the last-known position |
+| A2 Always search | Ignore memory, search from scratch |
+| A3 Uniform decay | Same half-life for every class |
+| A4 Ours | Class-specific half-life + trust/verify/search + re-ID |
+| A5 Oracle | Knows the true current position (upper bound) |
 
-**Protocol**
-- Sweep each trigger's threshold; interpolate recall at fixed rates {0.1, 0.25, 0.5, 1, 2} Hz; report recall-AUC over log(rate) and the per-episode p95 rate (burstiness).
-- Energy per frame (Jetson INA rails) **including the always-on perception**.
+**Metrics:** success (within 1 m of the true current position, within a time budget), time-to-success, path length, wasted trips, ID errors, minimum clearance to people, battery used.
 
-### 4.8 Statistics
-- **Unit of analysis:** episode; episode-cluster bootstrap CIs everywhere.
-- **Primary test (pre-registered):** best non-heuristic trigger vs geometric heuristic, harmful-change recall at 0.5 Hz, natural data, paired.
-- **Everything else:** Holm-corrected, reported as secondary.
-- **Power note:** ~100 natural harmful events give ±10 pp on recall, so only differences ≥ 15 pp are claimed.
+### E3 Language grounding (RQ3)
+- ≈ 300 language commands over recorded maps, including deliberately ambiguous ones ("the chair" when there are three).
+- Resolvers: Jev (typed Choice over IDs), small local LLM with log-probabilities, embedding similarity.
+- Metrics: accuracy, ECE, risk–coverage, clarification rate vs accuracy trade-off.
+- A subset is run in flight.
 
-## 5. Typed calibrated gates (Jev): secondary study
-The original motivation included Jev (TypeSafe AI, Sept 2026), a hosted, text-only model that returns typed answers with calibrated probabilities.
-- **Role:** an **appendix study** and a **separate workshop paper**, not in the main reproducible ranking.
-- **Protocol:** Jev answers "is the last decision still valid?" on the structured JSON state, called **only on frames the geometric heuristic flags as quiet** (this respects rate limits and targets the semantic-only residual).
-- **Logging:** version pinned, every request and response logged.
-- **Workshop paper:** latency/RTT from the flying drone, timeout rate, calibration (ECE) on embodied Booleans before and after recalibration.
+### Statistics
+- **Unit:** the command, clustered by session; cluster-bootstrap CIs.
+- **Primary test (pre-registered):** A4 vs the best of A1–A3 on success within the time budget.
+- Holm correction for all secondary comparisons.
 
-## 6. Contributions
-1. **Decision half-life:** a cause-attributed, consequence-weighted measurement of how long VLM-set control parameters stay valid, across 2 hosts × 2 VLM families × 3 prompts.
-2. **A measurement protocol** that extends video-analytics dense replay to control: behavioural equivalence, factorial cause attribution, latency/queue modelling, and branching rollouts calibrated on real flights.
-3. **A matched-rate ranking** of re-query trigger families on geometry-visible vs semantic-only harm, with energy.
-4. **The open "Expiry" dataset and benchmark** (natural + staged + flight).
+## 6. Phase 2: moving targets (extension, not in the first paper)
+"Follow #12" / "go to #12" while #12 moves:
+- Track with ZED object and body tracking + Kalman prediction.
+- Intercept with a safety distance enforced by the CBF.
+- Re-ID after occlusion.
+- Metrics: time to intercept, tracking loss, minimum distance to people (proxemic sweep 0.6–2.0 m).
 
-## 7. Plan (9 months)
+## 7. Role of Jev
+Jev (TypeSafe AI, Sept 2026) is a hosted, text-only model returning typed answers with calibrated probabilities. Its two roles here are both natural fits:
+1. **Grounding:** a typed Choice over map IDs (≤ 255 options) with calibrated confidence. This drives clarification.
+2. **Zero-shot mobility:** a typed Score / Choice on how likely a class is to move within Δt.
+
+Jev is always compared against a small local LLM and an embedding baseline. Version pinned, all I/O logged. If access never comes, both roles are filled by the local LLM and Jev is dropped without affecting the paper.
+
+## 8. Contributions
+1. **Object-memory half-lives:** the first per-class measurement of how long remembered object positions stay valid in a real indoor space, plus zero-shot prediction for unseen classes.
+2. **A half-life-aware trust / verify / search policy** for drones navigating to remembered objects, with re-identification.
+3. **Calibrated language-to-ID grounding** with clarification, comparing typed decision models, local LLMs and embeddings.
+4. **Real-flight evaluation** and an open dataset (persistence logs, maps, commands, ground truth).
+
+## 9. Plan (9 months)
 | Month | Work | Gate |
 |---|---|---|
-| 1 | Host 1 + 30-episode pilot + Orin latency profiling | **Go/no-go** (§8) |
-| 2 | Host 2, rollout model, staged-pair protocol | |
-| 2–4 | Recording (natural + staged) | |
-| 4 | Dense replay, attribution, rollouts | |
-| 5–6 | 72 flight runs, calibration of the rollout model | |
-| 6–7 | Trigger benchmark, statistics; Jev appendix + workshop draft | |
+| 1 | Install external cameras + tags, start E1 logging; mapping pipeline on the drone | Go/no-go (§10) |
+| 2–3 | Object IDs, descriptions, re-ID; memory model; policy in simulation | |
+| 3–4 | E1 analysis; grounding resolvers; E3 offline | |
+| 5–6 | E2 flight trials | |
+| 7 | Analysis; Phase 2 prototype if time allows | |
 | 8–9 | Writing, dataset release, submission | |
 
-## 8. Go/no-go (end of month 1, numeric)
+## 10. Go/no-go (end of month 1)
 | Check | Pass |
 |---|---|
-| Non-equivalent decision changes in natural footage | ≥ 0.5 per minute |
-| Sampling-noise flips | < ⅓ of that rate |
-| Harmful changes missed by the geometric heuristic at 0.5 Hz | ≥ 15 % → the learned-gate section stays; otherwise the paper reports "heuristics suffice" (still publishable) |
+| Objects actually move in the chosen space | ≥ 20 % of tracked objects relocate at least once per week |
+| Mapping + ID assignment works | ≥ 80 % of tagged objects get a correct, stable ID in one mapping pass |
+| Re-ID of moved objects | ≥ 70 % correct on a small scripted test |
 
-## 9. Risks
+**If objects rarely move:** move logging to a busier space (common room, workshop), or rely on scripted relocations and report the natural rate honestly.
+
+## 11. Risks
 | Risk | Mitigation |
 |---|---|
-| Host 1 harm ≈ 0 (CBF + stale cap absorb it) | Pre-registered as an acceptable finding; report the efficiency cost instead |
-| Decision changes rare | Staged stratum guarantees coverage; natural rate is reported as is |
-| Noise dominates | Headline finding ("most VLM flips are noise") motivates temporal smoothing |
-| Re-implementations unrepresentative | Verbatim prompts, open code, 3 paraphrases, paraphrase-variance reported |
-| Handheld ≠ flight | Rollouts calibrated on flights; distribution shift quantified |
-| Workload for one student | Month-1 scope is one host; compute is not the bottleneck, person-months are |
-| No Jev access | Jev is appendix/workshop only; the main paper is unaffected |
+| Lab objects rarely move | Busier space; scripted relocations; natural rate reported |
+| Identical objects break re-ID | Stress test reported; spatial prior + description; ask the user when ambiguous |
+| Overlap with VL Motion Maps / stationarity-score work | Read in full; position on measured half-lives + drone decision policy + grounding |
+| Ground truth leaks into perception | Tags out of the drone's view; GT from external cameras/mocap only |
+| No Jev access | Local LLM fills both roles |
 
-## 10. Audit trail (how the idea got here)
-| Version | Idea | What killed it |
+## 12. Audit trail
+| Version | Idea | Outcome |
 |---|---|---|
-| — | Audit of ImpedanceGPT | Motivated the line of work (§1) |
-| Two Witnesses | Depth + VLM cross-check with conformal safety | Wrong direction of harm; empty guarantee; strawman attacks; prior art (AlphaAdj, ASMA, semantic CBFs) |
-| See the wind | Semantic aerodynamic memory | Dropped by author choice (goal = compute efficiency with Jev) |
-| v1 REFLEX | Jev replaces VLM decision + certified escalation | A decision tree matches Jev; gate blind to perception errors; ≥ 5× impossible vs short-JSON prompting |
-| v2 Saccade | Jev schedules VLM calls | Same Jev-vs-classifier problem; certified cascades exist |
-| v3 Selective reuse | Certified reuse of VLM decisions | False novelty (AESOP, React-When-You-Need-To, EAMP); circular harm; empty certificate |
-| v4 Expiry | Measurement + trigger benchmark | Open-loop counterfactual invalid; latency ignored; NoScope/Reducto prior art; weak statistics |
-| **v5 (this)** | **Decision half-life with causal attribution, closed-loop rollouts, matched-rate trigger ranking** | Estimated IROS 45–50 % if executed as written (reviewer estimate) |
+| Two Witnesses | Depth + VLM cross-check | Wrong harm direction; prior art |
+| v1 REFLEX | Jev replaces the VLM decision | Decision tree matched Jev |
+| v2 Saccade | Jev schedules VLM calls | Certified cascades exist |
+| v3 Selective reuse | Certified reuse of VLM decisions | False novelty; circular harm |
+| v4 Expiry | Staleness measurement | Open-loop replay invalid; latency ignored |
+| v5 Half-life | Decision half-life study | Est. IROS 45–50 % if executed; replaced by the author for a task-driven design |
+| **v6 (this)** | **Expiring object memory + navigation to remembered objects** | Pending audit |
 
-**Where we disagree with the last audit:**
-1. The reviewer wanted "≥ 15 % missed by heuristic" as a hard go/no-go. We use it only to gate the learned-gate section, because the paper's headline survives either outcome.
-2. Jev stays as a pre-registered appendix study rather than being dropped, to meet the author's goal without contaminating the main ranking.
-
-## 11. References (verify every entry; several are from search snippets)
-ImpedanceGPT arXiv 2503.02723 · AlphaAdj arXiv 2603.21142 · ASMA arXiv 2409.10283 (code: github.com/souravsanyal06/ASMA) · EAMP/PC-SET arXiv 2606.25629 · React When You Need To arXiv 2609.22587 · AESOP (Sinha et al., RSS 2024) · Slow Brain, Fast Planner arXiv 2606.20458 · ProAct-VLM arXiv 2609.37681 · Act-Think-Abstain arXiv 2603.05147 · VLA temporal redundancy arXiv 2607.12287 · VLA-Cache arXiv 2502.02175 · Hi Robot arXiv 2502.19417 · Fast-in-Slow arXiv 2506.01953 · NoScope (VLDB 2017) · Reducto (SIGCOMM 2020) · Chameleon (SIGCOMM 2018) · FilterForward (MLSys 2019) · Wögerbauer et al. 2024, preferred distance in human–drone interaction (PMC11503297) · TypeSafe Jev announcement (typesafe.ai, Sept 2026)
+## 13. References (verify all)
+ImpedanceGPT 2503.02723 · DovSG 2410.11989 · DynaMem · LOST-3DSG 2601.02905 · Vision–Language–Motion Maps 2607.16173 · UAV-ON 2508.00288 · AirHunt 2601.12742 · Spatial Belief Fields 2609.05841 · Dual-layer belief mapping 2609.08164 · Lifelong semantic maps 2010.08846 · Semantic Linking Maps 2006.10807 · TypeSafe Jev (Sept 2026)
