@@ -2,6 +2,8 @@
 
 **Canonical proposal: [`PROPOSAL.md`](PROPOSAL.md)** — *Look Before You Fly: Acting on Stale Object Memory with an Aerial Vantage Point* (v7).
 
+**Simulation of the full algorithm:** [`../sim/`](../sim/README.md) (results in `sim/results/`).
+
 History (superseded by `PROPOSAL.md`):
 
 | File | What it is |
