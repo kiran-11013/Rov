@@ -108,6 +108,25 @@ From 0.4 m the desk edge hides them. The model still says 7–19 % are visible a
 
 Open-laptop check (open layout, re-rendered with `export_scene.py --laptop-open`): open laptops are render-visible at 10.0 / 22.0 / 40.0 % from 0.4 / 1.0 / 1.8 m, against 2.0 / 10.7 / 26.7 % for closed ones. Opening the lid makes them visible from low down more often, but altitude still multiplies visibility by about 4×. The calibrated simulator with open laptops shows *no* laptop altitude effect, so it understates this case. The true laptop effect lies between the two simulated runs.
 
+## Stage 3b update: a real detector and real appearance features
+
+Isaac Sim renders with realistic library models, run through YOLO-World and DINOv2 (`../isaac/results/open_real_DETECTION.md`,
+`open_real_REID.md`).
+
+| Question | Answer (open layout, 360 frames) |
+|---|---|
+| How many pixels does a real detector need? | a50 ≈ 340 px with the right label, ≈ 270 px for a proposal under any label. The simulator assumed 224.5 px. The real curve is also shallower (slope 1.0 vs 0.35) and tops out at 85 %. |
+| Does altitude survive a real detector? | **Yes.** Correctly labelled detections per viewpoint: 5.2 → 7.1 → 9.3 at 0.4 / 1.0 / 1.8 m, +79 %, vs +80 % visible in the renders. Mugs: 2.9 → 14.3 % detected. Closed laptops seen from above are the weak spot (≤ 5 %). |
+| Are the detector's labels reliable? | No. Trash can → "cup" 63 %, stool → "chair" 77 %, monitor → "laptop" 35 %. Boxes are still found: ≥ 87 % of clearly visible objects for most classes. So detection gives proposals, and identity comes from re-identification. |
+| Does metric size from depth help? | The nearest-size rule picks the true class in 73 % of the detector's confusions: stool / chair 86 %, monitor / laptop 93 %, bin / cup 100 %. It fails when the box covers only part of the object (a chair back called "monitor"). |
+| Can appearance (DINOv2) tell objects apart? | Between classes, fairly well (AUC 0.88). Between same-class objects, barely (AUC 0.57; 0.59 with flat colour tints). In the simulator, only chairs were look-alikes. In the renders, nearly every class behaves like one: a same-class spread of 0.015 instead of 0.5. |
+
+**Stage 2 re-run with the real detector's curve** (`results/stage2_realdet/`: a50 339.6 px, slope 1.0, p_max 0.85):
+
+- **Altitude:** PASS in all 20 layouts, saving 46–48 % across seeds. As before, the saving comes from laptops (success 0.43 → 1.00) and mugs (mean time 42 → 19 s). The simulator uses one detection curve for all classes, so it overstates how detectable closed laptops are from above, and the laptop part of the gain is optimistic.
+- **Policy vs trust:** 10–12.5 % faster (moved objects: 9–17 %), and 2–3 % faster than always verifying. Success is 0.3–0.6 points lower than trust, with an interval excluding 0 in two layouts. With a less reliable detector, verifying from far away sometimes misses an object that flying close would find.
+- **Priors:** the commonsense stand-in prior still costs about 2.8 points of success.
+
 ## Limits of this simulation
 
 - Detection depends only on line of sight and range. No lighting, motion blur or detector false positives.
