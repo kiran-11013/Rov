@@ -7,8 +7,8 @@ Inputs come from capture.py run with every RGB frame and segmentation saved:
 
 Each class has several text prompts (synonyms); a detection's class is the class of its prompt. Ground truth per
 (frame, object): visible pixels and tight box from instance segmentation. A detection matches an object when the
-class agrees and the box overlaps it (IoU >= 0.3, or >= 50 % of the object's pixels inside the box); greedy by
-confidence. Per viewpoint (any of the 4 yaws, as in the visibility model) we get (visible pixels, detected?).
+class agrees and the box overlaps it (IoU >= 0.3, or >= 50 % of the object's pixels inside a box at most
+MAX_AREA_RATIO times the object's own box); greedy by confidence. Per viewpoint (any of the 4 yaws, as in the visibility model) we get (visible pixels, detected?).
 
 The operating confidence is the lowest of CONF_SWEEP giving <= --max-fp false positives per frame (unless --conf is
 given). The report has a confidence sweep, detection rate vs visible pixels, a fitted
@@ -152,6 +152,25 @@ def run_detector(args, frames, cls_of):
     return raw
 
 
+MAX_AREA_RATIO = 2.0  # containment counts only if the detection box is at most this many times the object's box
+
+
+def _area(b):
+    return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+
+
+def tight_overlaps(fr):
+    """Overlaps from a raw frame, dropping 'object inside a much bigger box' (e.g. a mug inside a monitor's box)."""
+    out = {}
+    for o, lst in fr["ov"].items():
+        gbox = fr["gt"][o][1]
+        keep = [(j, sc) for j, sc in lst
+                if iou(fr["dets"][j][2], gbox) >= 0.3 or _area(fr["dets"][j][2]) <= MAX_AREA_RATIO * max(_area(gbox), 1.0)]
+        if keep:
+            out[int(o)] = keep
+    return out
+
+
 def per_viewpoint(raw, cls_of, conf):
     """Rows (node, alt, oid, cls, max px, detected, proposed) at a confidence threshold, plus per-frame means of
     false positives (detections not matching their class) and background false positives (boxes on no object).
@@ -160,9 +179,9 @@ def per_viewpoint(raw, cls_of, conf):
     per_vp, fps, bg = {}, [], []
     for fr in raw:
         dets = [tuple(d[:3]) for d in fr["dets"]]
-        ov = {int(o): [tuple(x) for x in lst] for o, lst in fr["ov"].items()}
+        on_obj = {j for lst in fr["ov"].values() for j, _ in lst}  # background = touches no object at all
+        ov = tight_overlaps(fr)
         matched = match_from(dets, ov, cls_of, conf)
-        on_obj = {j for lst in ov.values() for j, _ in lst}
         n_conf = sum(1 for d in dets if d[1] >= conf)
         fps.append(n_conf - len(matched))
         bg.append(sum(1 for j, d in enumerate(dets) if d[1] >= conf and j not in on_obj))
@@ -184,7 +203,7 @@ def confusion(raw, cls_of):
         for o, (px, _) in fr["gt"].items():
             if px < CLEAR_PX:
                 continue
-            cands = [fr["dets"][j] for j, sc in fr["ov"].get(o, [])]
+            cands = [fr["dets"][j] for j, sc in tight_overlaps(fr).get(int(o), [])]
             label = max(cands, key=lambda d: d[1])[3] if cands else "(nothing)"
             out[cls_of[int(o)]][label] += 1
     return out
