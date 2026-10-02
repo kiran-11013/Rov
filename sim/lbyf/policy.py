@@ -29,10 +29,13 @@ class Planner:
         self.budget_cost = self.fail_penalty
 
     # --- greedy rule ----------------------------------------------------------------
-    def next_vp(self, m, cur):
+    def next_vp(self, m, cur, exclude=None):
+        """exclude: viewpoints already looked from in this episode (a repeat look adds nothing)."""
         gains = self.V[self.allowed] @ m
         cost = self.d.COST[cur, self.allowed] + self.d.obs_cost
         ratio = np.where(gains > 1e-9, gains / cost, -np.inf)
+        if exclude:
+            ratio[np.isin(self.allowed, list(exclude))] = -np.inf
         i = int(np.argmax(ratio))
         if not np.isfinite(ratio[i]):
             return None

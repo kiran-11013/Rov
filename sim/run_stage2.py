@@ -224,6 +224,9 @@ def report(R, out, runtime):
     w("# Stage 2: stress-testing the simulated claims\n")
     if EXTRA or any(r["cfg"].get("visibility_model") == "extended" for part in R.values() for r in part[:1]):
         cfg0 = next(iter(R.values()))[0]["cfg"]
+        if cfg0.get("persistent_misses"):
+            w("**Persistent misses:** a detection miss from a viewpoint repeats on later looks from it in the same "
+              "episode, and the search does not revisit viewpoints.\n")
         if cfg0.get("det_coef"):
             w("**Detection model: fitted to a real detector** (YOLO-World on Isaac Sim renders, per size group and "
               f"viewing angle; coefficients {cfg0.get('det_coef')}).\n")
@@ -391,12 +394,16 @@ def main():
     ap.add_argument("--laptop-open", action="store_true", help="extended model: laptops open (screen up)")
     ap.add_argument("--slope", type=float, default=0.35, help="extended model: logistic width in ln(pixels)")
     ap.add_argument("--pmax", type=float, default=0.95, help="extended model: detection probability for large objects")
+    ap.add_argument("--persistent-misses", action="store_true",
+                    help="a detection miss from a viewpoint repeats within an episode; no repeat looks")
     ap.add_argument("--det-model", default=None, help="JSON from isaac/fit_detection_model.py (fitted real detector)")
     args = ap.parse_args()
     if args.visibility == "extended":
         EXTRA.update(visibility_model="extended", vis_a50_px=args.a50, vis_slope=args.slope, vis_pmax=args.pmax)
     if args.laptop_open:
         EXTRA.update(laptop_open=True)
+    if args.persistent_misses:
+        EXTRA.update(persistent_misses=True)
     if args.det_model:
         with open(args.det_model) as fh:
             coef = json.load(fh)["coef"]

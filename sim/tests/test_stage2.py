@@ -105,3 +105,29 @@ def test_replay_path_matches_simulated_time():
             for k in keys:  # every waypoint is in free space (the drone never cuts through furniture)
                 assert ctx.drone.grid.free(ctx.drone.grid.cell_of(k[1], k[2]))
             assert len(pose_at(keys, keys[-1][0] / 2)) == 4
+
+
+def test_persistent_misses_repeat_and_no_revisits():
+    import numpy as np
+    from lbyf.perception import observe
+    from lbyf.config import SimConfig
+    from lbyf.episode import Arm, Executor, sample_commands
+    from lbyf.experiments import setup
+    import dataclasses
+
+    cfg = dataclasses.replace(SimConfig.quick(), persistent_misses=True)
+    ctx = setup(cfg)
+    state = ctx.history.state_at(ctx.train_end + 30)
+    vp = int(np.argmax(ctx.drone.V.sum(1)))
+    memo, rng = {}, np.random.default_rng(0)
+    first = {d.oid for d in observe(ctx.drone, ctx.world, state, vp, rng, memo=memo)}
+    for _ in range(5):
+        assert {d.oid for d in observe(ctx.drone, ctx.world, state, vp, rng, memo=memo)} == first
+    ex = Executor(ctx.drone, ctx.world, cfg, ctx.disp, ctx.ours)
+    cmds = sample_commands(ctx.history, ctx.world, cfg, np.random.default_rng(3), ctx.train_end, ctx.test_end, 5)
+    for cmd in cmds[:6]:
+        trace = []
+        ex.run(Arm("ours", ctx.ours, "ours"), cmd, ctx.history.state_at(cmd.t0 + cmd.dt), np.random.default_rng(0),
+               trace=trace)
+        looks = [e["vp"] for e in trace if e["kind"] == "look"]
+        assert len(looks) == len(set(looks))

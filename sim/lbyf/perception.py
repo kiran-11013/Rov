@@ -19,7 +19,9 @@ class Detection:
     appearance: np.ndarray
 
 
-def observe(drone, world, state, vp, rng, cls_filter=None):
+def observe(drone, world, state, vp, rng, cls_filter=None, memo=None):
+    """memo: optional dict shared within one episode; a detection outcome for (viewpoint, object) is then drawn once
+    and repeated on later looks from the same viewpoint (a real detector misses the same image the same way)."""
     dets = []
     for oid, pid in state.items():
         if pid == ABSENT:
@@ -27,7 +29,14 @@ def observe(drone, world, state, vp, rng, cls_filter=None):
         o = world.objects[oid]
         if cls_filter is not None and o.cls != cls_filter:
             continue
-        if rng.random() < drone.V_for(o.cls)[vp, pid]:
+        if memo is None:
+            hit = rng.random() < drone.V_for(o.cls)[vp, pid]
+        else:
+            key = (vp, oid)
+            if key not in memo:
+                memo[key] = rng.random() < drone.V_for(o.cls)[vp, pid]
+            hit = memo[key]
+        if hit:
             a = o.appearance + rng.normal(0, drone.cfg.obs_noise, size=o.appearance.shape)
             dets.append(Detection(oid, o.cls, pid, a / np.linalg.norm(a)))
     return dets

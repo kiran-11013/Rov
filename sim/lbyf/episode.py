@@ -110,6 +110,8 @@ class Executor:
         else:
             action, vp, _ = pl.decide(b, cmd.mapped_pid, cur)
 
+        persistent = getattr(cfg, "persistent_misses", False)
+        memo, visited = ({}, set()) if persistent else (None, None)
         m = b[:pl.P].copy()
         comp = self.world.compatible_places(target.cls)
         t = e = 0.0
@@ -121,7 +123,9 @@ class Executor:
             t += dt
             e += d.ENERGY[cur, vp] + d.obs_energy
             cur = vp
-            dets = observe(d, self.world, state_now, vp, rng, cls_filter=target.cls)
+            dets = observe(d, self.world, state_now, vp, rng, cls_filter=target.cls, memo=memo)
+            if visited is not None:
+                visited.add(vp)
             prior_here = m / m.sum() if (arm.spatial_reid and m.sum() > 0) else None
             hit = reidentify(dets, target.appearance, cfg.reid_threshold, belief=prior_here)
             log({"kind": "look", "vp": int(vp), "t": float(t), "step": action if wasted == 0 else "search",
@@ -139,7 +143,7 @@ class Executor:
             if m.sum() < 1e-6:  # belief exhausted: fall back to a sweep over all compatible places
                 m = np.zeros(pl.P)
                 m[comp] = 1.0 / len(comp)
-            vp = pl.next_vp(m, cur)
+            vp = pl.next_vp(m, cur, exclude=visited)
         return Result(arm.name, cmd.idx, False, False, float(cfg.time_budget_s), float(e), wasted, action)
 
 

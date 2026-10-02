@@ -44,6 +44,7 @@ class SimConfig:
     vis_a50_px: float = 200.0        # extended model: pixel area for half-maximal detection
     vis_slope: float = 0.35          # extended model: logistic width in ln(pixels)
     vis_pmax: float = 0.95           # extended model: detection probability for very large objects
+    persistent_misses: bool = False  # True: a miss from a viewpoint repeats within an episode (real detectors)
     det_coef: tuple = ()             # fitted real-detector model: ((group, b0, b1, b2), ...); empty = logistic curve
     laptop_open: bool = False        # extended model: laptops open (screen up, ~0.25 m tall) instead of closed (3 cm)
 
