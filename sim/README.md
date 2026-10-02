@@ -126,6 +126,25 @@ Isaac Sim renders with realistic library models, run through YOLO-World and DINO
 - **Altitude:** PASS in all 20 layouts, saving 46–48 % across seeds. As before, the saving comes from laptops (success 0.43 → 1.00) and mugs (mean time 42 → 19 s). The simulator uses one detection curve for all classes, so it overstates how detectable closed laptops are from above, and the laptop part of the gain is optimistic.
 - **Policy vs trust:** 10–12.5 % faster (moved objects: 9–17 %), and 2–3 % faster than always verifying. Success is 0.3–0.6 points lower than trust, with an interval excluding 0 in two layouts. With a less reliable detector, verifying from far away sometimes misses an object that flying close would find.
 - **Priors:** the commonsense stand-in prior still costs about 2.8 points of success.
+- **Look-alikes at render-measured appearance** (every class as hard to tell apart as in the renders, spread 0.015):
+  - Instance success falls to 0.73–0.75 for ours and 0.68–0.69 for trust.
+  - **The spatial prior is worth +18 to +21 points** (open / booth), against +6 points when only chairs are look-alikes.
+  - Ours now beats trust on success by 5–7 points.
+  - With realistic appearance features, the map belief stops being a refinement and becomes what makes instance-level commands work at all.
+
+**Altitude with a real detector, all three layouts** (Isaac Sim, realistic models, YOLO-World; rate of correctly labelled detection per viewpoint–object pair at 0.4 / 1.0 / 1.8 m):
+
+| Class | Open | Booth | Cubicle |
+|---|---|---|---|
+| mug | 2.9 / 11.9 / 14.3 % | 1.9 / 6.2 / 5.7 % | 1.4 / 8.1 / 9.0 % |
+| laptop (closed) | 0 / 2.7 / 4.7 % | 0 / 0.7 / 2.7 % | 0 / 2.0 / 1.3 % |
+| monitor | 10.0 / 13.9 / 18.3 % | 5.6 / 8.3 / 8.3 % | 8.3 / 10.6 / 12.2 % |
+| all objects, per viewpoint | 5.2 / 7.1 / 9.3 | 6.2 / 6.4 / 6.0 | 7.2 / 8.2 / 7.7 |
+
+- **Mugs, the small objects on desks:** detected 3–6× more often from 1.0–1.8 m, in every layout. Most of the gain is already reached at 1.0 m.
+- **Closed laptops:** the detector barely finds them from any height. The simulator's laptop gain is not supported until a better detector or an open-laptop scene is used.
+- **Floor objects:** bins, plants, bags and carts are detected slightly *less* often from 1.8 m in booth and cubicle, because steep top-down views confuse the detector.
+- **Over all objects**, the altitude gain is large only in the open layout. The simulator uses one detection curve whatever the viewing angle, which overstates the benefit in enclosed layouts. The claim that holds up is the conditional one: go higher for small objects on desks, stay low for floor objects.
 
 ## Limits of this simulation
 
