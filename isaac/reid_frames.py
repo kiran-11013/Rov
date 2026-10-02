@@ -30,6 +30,7 @@ import detect_frames as DF  # noqa: E402
 # class heights (m) of the placed models (see the [scene] model lines), for the size check
 CLASS_HEIGHT = {"chair": 0.81, "stool": 0.45, "cart": 0.90, "bag": 0.11, "laptop": 0.01, "monitor": 0.31,
                 "box": 0.12, "bin": 0.40, "plant": 0.27, "toolbox": 0.20, "mug": 0.07}
+FLAT = ("laptop", "monitor", "box", "bag", "toolbox", "mug")  # compared by largest side, not height
 # for laptops the visible extent is the lid, not the 1 cm height; compare the largest side instead
 CLASS_EXTENT = {"chair": 0.81, "stool": 0.45, "cart": 0.90, "bag": 0.22, "laptop": 0.28, "monitor": 0.55,
                 "box": 0.40, "bin": 0.40, "plant": 0.27, "toolbox": 0.24, "mug": 0.09}
@@ -194,7 +195,7 @@ def main():
 
     def plausible(cls, sz):
         h, ext = sz
-        ref, val = (CLASS_EXTENT[cls], ext) if cls in ("laptop", "monitor", "box", "bag", "toolbox", "mug") else (CLASS_HEIGHT[cls], h)
+        ref, val = (CLASS_EXTENT[cls], ext) if cls in FLAT else (CLASS_HEIGHT[cls], h)
         return 1 / args.size_tol <= val / ref <= args.size_tol
 
     for qi, q in enumerate(queries):
@@ -208,6 +209,29 @@ def main():
     for (c, lab), (n, r, w) in sorted(conf_pairs.items(), key=lambda kv: (kv[0][0], -kv[1][0])):
         if n >= 5:
             L.append(f"| {c} | {lab} | {n} | {r / n:.0%} | {w / n:.0%} |")
+    # nearest-size rule: between the detector's (wrong) label and the true class, which size fits better?
+    def size_err(cls, sz):
+        h, ext = sz
+        ref, val = (CLASS_EXTENT[cls], ext) if cls in FLAT else (CLASS_HEIGHT[cls], h)
+        return abs(math.log(max(val, 1e-3) / ref))
+
+    pick = defaultdict(lambda: [0, 0])
+    for qi, q in enumerate(queries):
+        c = cls_of[q["oid"]]
+        if sizes[qi] is None or q["label"] == c:
+            continue
+        rec = pick[(c, q["label"])]
+        rec[0] += 1
+        rec[1] += size_err(c, sizes[qi]) < size_err(q["label"], sizes[qi])
+    if pick:
+        L += ["\n**Nearest-size rule on the detector's confusions:** of the true class and the wrong label, does the "
+              "measured size fit the true class better?\n", "| True class | Wrong label | Queries | Size picks the true class |",
+              "|---|---|---|---|"]
+        for (c, lab), (n, k) in sorted(pick.items(), key=lambda kv: -kv[1][0]):
+            if n >= 5:
+                L.append(f"| {c} | {lab} | {n} | {k / n:.0%} |")
+        tot = sum(n for n, _ in pick.values())
+        L.append(f"\nOverall the size picks the true class in {sum(k for _, k in pick.values()) / tot:.0%} of {tot} confusions.\n")
     wrong = [(n, r, w) for (c, lab), (n, r, w) in conf_pairs.items() if c != lab]
     right = [(n, r, w) for (c, lab), (n, r, w) in conf_pairs.items() if c == lab]
     if wrong and right:
@@ -217,7 +241,12 @@ def main():
     text = "\n".join(L) + "\n"
     with open(os.path.join(args.frames, "REID.md"), "w") as fh:
         fh.write(text)
+    with open(os.path.join(args.frames, "reid_queries.json"), "w") as fh:
+        json.dump({"memories": mem_ids, "classes": [cls_of[o] for o in mem_ids],
+                   "queries": [{**q, "size": sizes[qi], "sims": [round(float(v), 4) for v in S[qi]]}
+                               for qi, q in enumerate(queries)]}, fh)
     print(text)
+    print("\n".join(L[2:7]))  # summary again at the end
 
 
 if __name__ == "__main__":
