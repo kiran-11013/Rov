@@ -160,8 +160,9 @@ def place_model(stage, root, ob, rel_path, colour=None, rx_override=None):
     return s
 
 
-def build_scene(stage, spec, assets="proxy", tint_models=False):
-    """Room, furniture, objects and lights. assets: 'proxy' or 'real'."""
+def build_scene(stage, spec, assets="proxy", tint_models=False, colliders=False):
+    """Room, furniture, objects and lights. assets: 'proxy' or 'real'. colliders: give the floor, walls and
+    furniture static collision (needed when a physically simulated drone flies in the scene)."""
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     UsdGeom.Xform.Define(stage, "/World")
@@ -211,6 +212,14 @@ def build_scene(stage, spec, assets="proxy", tint_models=False):
     log(f"built {len(spec['objects'])} objects ({n_real} real models, {n_labelled} with semantic labels), "
         f"{len(spec['boxes'])} furniture boxes, {len(spec['walls'])} walls")
 
+    if colliders:
+        from pxr import UsdPhysics
+        for root_path in ("/World/Floor", "/World/Walls", "/World/Furniture"):
+            root_prim = stage.GetPrimAtPath(root_path)
+            if root_prim:
+                for p in Usd.PrimRange(root_prim):
+                    if p.IsA(UsdGeom.Gprim):
+                        UsdPhysics.CollisionAPI.Apply(p)
     dome = UsdLux.DomeLight.Define(stage, "/World/Lights/Dome")
     dome.CreateIntensityAttr(800.0)
     sun = UsdLux.DistantLight.Define(stage, "/World/Lights/Key")

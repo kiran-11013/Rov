@@ -104,3 +104,16 @@ Re-identification (uses the same frames and `detections_raw.json`; downloads DIN
 ~/isaacsim/python.sh isaac/reid_frames.py --spec isaac/out/spec_open.json --frames isaac/out/frames_open_real
 ```
 Results: `results/open_real_REID.md`.
+
+## Stage 3c: PX4 drone in the office scene (Pegasus + PX4 SITL)
+
+Setup (once): PX4-Autopilot v1.16 built with `make px4_sitl_default none` in `~/PX4-Autopilot`, and the Pegasus Simulator
+(Isaac Sim 6.0.1 port, github.com/livealive7/PegasusSimulator) installed with
+`~/isaacsim/python.sh -m pip install --editable pegasus.simulator`.
+
+```bash
+python3 isaac/export_episode.py --layout open --out isaac/out/episode.json
+~/isaacsim/python.sh isaac/px4_office.py --episode isaac/out/episode.json --arm 2
+```
+The Iris quadrotor, a stand-in for the X500 (1.5 vs ~2 kg), runs real PX4 in offboard mode. It flies the planner's
+waypoints at 1 m/s / 0.5 m/s and saves ZED-like camera frames to `isaac/out/px4_flight/`.
