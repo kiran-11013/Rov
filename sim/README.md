@@ -106,7 +106,7 @@ From 0.4 m the desk edge hides them. The model still says 7–19 % are visible a
 
 **Revised claim.** "Altitude helps" is too broad. The defensible claim is that **a vantage point pays off for small or flat objects on surfaces above camera height, and is irrelevant for floor-standing ones**. The size of the gain therefore depends on what the user asks for. The paper should report it per object class, not as one number.
 
-Open check: the renders used closed-laptop proxies. Re-render with `export_scene.py --laptop-open` to see whether open laptops are visible from 0.4 m.
+Open-laptop check (open layout, re-rendered with `export_scene.py --laptop-open`): open laptops are render-visible at 10.0 / 22.0 / 40.0 % from 0.4 / 1.0 / 1.8 m, against 2.0 / 10.7 / 26.7 % for closed ones. Opening the lid makes them visible from low down more often, but altitude still multiplies visibility by about 4×. The calibrated simulator with open laptops shows *no* laptop altitude effect, so it understates this case. The true laptop effect lies between the two simulated runs.
 
 ## Limits of this simulation
 
