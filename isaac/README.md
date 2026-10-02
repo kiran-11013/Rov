@@ -74,3 +74,25 @@ python3 isaac/export_episode.py --layout open --out isaac/out/episode.json
 `export_episode.py` picks a command where the object moved and "ours" gains the most, so it is an illustration,
 not evidence. The statistics are in `sim/results/`. Use `--cmd N` to pick a specific command, and `--speed`
 and `--fps` on `fly_episode.py` to change playback speed.
+
+## Stage 3b: realistic models and a real detector
+
+The proxies (plain boxes and cylinders) are fine for counting pixels, but a real detector cannot recognise
+them. `--assets real` swaps every object for a model from the Isaac Sim asset library (`assets.json`, found with
+`probe_assets.py`). Each model is scaled to the same class height and stood on the same spot, so the scene
+specs and the earlier analysis still apply. `detect_frames.py` runs YOLO-World and measures detection rate against
+visible pixels, by class and altitude. It also fits the same detection curve the simulator uses.
+
+```bash
+cd ~/rov && git pull
+# 1. quick look: 12 frames with real models
+~/isaacsim/python.sh isaac/capture.py --spec isaac/out/spec_open.json --out isaac/out/test_real --headless --assets real --max-frames 12 --rgb-every 1
+# 2. full open layout: every RGB frame plus segmentation (about 360 frames)
+~/isaacsim/python.sh isaac/capture.py --spec isaac/out/spec_open.json --out isaac/out/frames_open_real --headless --assets real --rgb-every 1 --save-seg
+# 3. detector (downloads the YOLO-World weights on first run)
+~/isaacsim/python.sh isaac/detect_frames.py --spec isaac/out/spec_open.json --frames isaac/out/frames_open_real
+# visibility model vs render, now with real models
+~/isaacsim/python.sh isaac/analyze_visibility.py --spec isaac/out/spec_open.json --frames isaac/out/frames_open_real
+```
+
+`fly_episode.py` also accepts `--assets real`.

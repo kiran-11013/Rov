@@ -88,3 +88,32 @@ def test_calibration_recovers_known_threshold(tmp_path):
         assert CV.score(rows, CV.threshold(rows, a50))["agreement"] > 0.97
     finally:
         CV.ES.build_spec = orig
+
+
+def test_detection_matching_and_curve_fit(tmp_path):
+    import json
+    import math
+    import sys
+
+    import numpy as np
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2] / "isaac"))
+    import detect_frames as DF
+
+    ids = np.zeros((100, 200), np.uint32)
+    ids[10:30, 10:50] = 5    # obj 1 (mug)
+    ids[50:90, 100:180] = 7  # obj 2 (chair)
+    ids[60:70, 20:30] = 9    # not an object
+    np.savez_compressed(tmp_path / "seg.npz", ids=ids, depth=np.zeros_like(ids, np.float16),
+                        id_to_path=json.dumps({"5": "/World/Objects/obj_1/model/mesh", "7": "/World/Objects/obj_2",
+                                               "9": "/World/Furniture/desk_0"}))
+    gts = DF.gt_objects(tmp_path / "seg.npz")
+    assert set(gts) == {1, 2} and gts[1][0] == 800 and gts[1][1] == (10, 10, 50, 30)
+    cls_of = {1: "mug", 2: "chair"}
+    dets = [("mug", 0.9, [11, 9, 49, 31]), ("mug", 0.4, [100, 50, 180, 90]), ("chair", 0.3, [95, 45, 185, 95])]
+    assert DF.match(dets, gts, cls_of) == {1: 0.9, 2: 0.3}  # wrong-class box on the chair does not count
+
+    rng = np.random.default_rng(0)
+    px = np.exp(rng.uniform(math.log(5), math.log(20000), 4000))
+    p = 0.95 / (1 + np.exp(-(np.log(px) - math.log(300)) / 0.4))
+    fit = DF.fit_logistic(px, rng.random(4000) < p)
+    assert 200 < fit["a50_px"] < 450 and fit["slope"] in (0.3, 0.4, 0.5)

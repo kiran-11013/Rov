@@ -1,0 +1,16 @@
+{
+ "_doc": "Realistic models per object class, relative to the Isaac Sim assets root (found with probe_assets.py). Each model is scaled uniformly to the class height in sim/lbyf/visibility.py CLASS_DIMS and placed on the same spot as the proxy.",
+ "chair": "Isaac/Environments/Office/Props/SM_ChairOffice.usd",
+ "stool": "NVIDIA/Assets/DigitalTwin/Assets/Warehouse/Furnishing/Seating/Stools/Work_A/WorkStool_A01_01.usd",
+ "cart": "Isaac/Environments/Hospital/Props/SM_Cart_01a.usd",
+ "bag": "Isaac/Environments/Hospital/Props/SM_MedicalBag_01a.usd",
+ "laptop": "Isaac/Environments/Office/Props/SM_LaptopClose.usd",
+ "laptop_open": "Isaac/Environments/Office/Props/SM_Laptop.usd",
+ "monitor": "Isaac/Environments/Office/Props/SM_Monitor.usd",
+ "box": "Isaac/Environments/Office/Props/SM_Box.usd",
+ "bin": "Isaac/Environments/Office/Props/SM_TrashCan.usd",
+ "plant": "Isaac/Environments/Office/Props/SM_Plant01.usd",
+ "toolbox": "Isaac/Environments/Hospital/Props/SM_Toolkit_02f.usd",
+ "mug": ["Isaac/Props/Mugs/SM_Mug_A2.usd", "Isaac/Props/Mugs/SM_Mug_B1.usd", "Isaac/Props/Mugs/SM_Mug_C1.usd",
+         "Isaac/Props/Mugs/SM_Mug_D1.usd"]
+}
