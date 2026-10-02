@@ -59,12 +59,15 @@ class Executor:
         self.absent_model = absent_model  # prior exposing absent_given_moved(cls, dt), shared by all arms
         self._planners = {}
 
+    def home_altitude(self, altitudes):
+        """Start/approach height: the allowed altitude closest to the configured cruise altitude."""
+        return min(altitudes, key=lambda a: (abs(a - self.cfg.cruise_altitude), a))
+
     def planner_for(self, altitudes):
-        """Planner restricted to the given altitudes; a single altitude is also the cruise/approach height."""
+        """Planner restricted to the given altitudes; it starts and approaches at `home_altitude`."""
         key = tuple(sorted(altitudes))
         if key not in self._planners:
-            approach = key[0] if len(key) == 1 else self.cfg.cruise_altitude
-            self._planners[key] = Planner(self.d, key, approach)
+            self._planners[key] = Planner(self.d, key, self.home_altitude(key))
         return self._planners[key]
 
     def arm_altitudes(self, arm):
@@ -82,8 +85,7 @@ class Executor:
         cfg, d = self.cfg, self.d
         alts = self.arm_altitudes(arm)
         pl = self.planner_for(alts)
-        alt0 = alts[0] if len(alts) == 1 else cfg.cruise_altitude
-        cur = d.dock_vp(alt0)
+        cur = d.dock_vp(self.home_altitude(alts))
         target = self.world.objects[cmd.oid]
 
         if arm.first == "oracle":

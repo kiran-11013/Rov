@@ -9,7 +9,8 @@ language commands with conformal clarification (E3).
 pip install -r requirements.txt
 python run_all.py            # both layouts, about 40 s → results/{open,cubicle}/RESULTS.md + figures
 python run_all.py --quick    # smoke run
-python -m pytest             # 11 tests
+python run_stage2.py         # Stage 2 stress tests, about 16 min on 4 cores → results/stage2/STAGE2.md
+python -m pytest             # 21 tests
 ```
 
 ## What is simulated
@@ -58,6 +59,32 @@ python -m pytest             # 11 tests
 - Design E2 spaces so altitude *can* matter: wall-facing cubicles, shelf tops above 1.5 m, clutter on desks. Otherwise expect the null result above.
 - Report instance-exact and intent-equivalent success separately: they differ only on identical objects.
 - Calibration of the prior matters twice, once for the action and once for re-ID. That is an argument for the E1 benchmark.
+
+## Stage 2: stress tests (see `results/stage2/STAGE2.md`)
+
+Stage 1 used one seed and two layouts. Stage 2 checks whether its conclusions survive:
+- a **layout sweep**: 20 layouts × 6 seeds, covering partition height 1.0–2.0 m, open / cubicle / wall-facing booth layouts, and desks with or without clutter;
+- **seed robustness**: 12 independent six-week worlds for each of 4 layouts;
+- **sensitivity**: 17 one-at-a-time changes to drone speed, climb speed, energy weight, time budget, observe time, detection range and altitude sets;
+- a **look-alike stress test**: how many objects look alike, how well appearance matching works, and whether the policy uses its belief about where the object probably is.
+
+**The altitude rule was fixed before the sweep ran.** Altitude stays a main claim only if some layout saves ≥ 10 % time by using all altitudes rather than 0.4 m only, with the 95 % interval above 0. If no layout reaches 3 %, the paper leads with the prior benchmark and look-alike re-identification instead.
+
+| Question | Answer (Student-t 95 % intervals across seeds) |
+|---|---|
+| **Does altitude pay off?** | **No (rule: FAIL).** The best of 20 layouts saves 1.7 % [−0.5, 4.0]; none reaches 3 %. Flying *always* at 1.8 m instead of 0.4 m saves at most 3.3 % [0.8, 5.8]. No drone setting changes this. |
+| Why not? | To see over an occluder, the drone must look down steeply from close by (see `test_seeing_over_an_occluder_needs_a_steep_angle`). Flying round it at 0.4 m costs about as much as climbing. In these spaces the remaining gap to an oracle is search and observation overhead, not sight lines. |
+| Does the trust / verify / search policy help? | **Yes, robustly.** It is 5–7 % faster than fly-there-and-search in every layout (intervals exclude 0), **17–20 % faster when the object actually moved**, and 1.4–2.3 % faster than always-verify. Success is the same (differences ≤ 0.3 points). This holds under every sensitivity setting. |
+| Does the prior matter? | Our activity-aware Weibull prior has the lowest Brier score in 83 % of seeds: 0.111, vs 0.114 for the persistence filter (difference −0.0026 [−0.0050, −0.0002]) and 0.146 for the commonsense stand-in. **Inside the policy the miscalibrated commonsense prior costs 3 points of success** in all four layouts, because it makes the drone accept a look-alike elsewhere. |
+| Look-alikes | Every instance-level failure is a look-alike swap; intent success is 100 %. Using the belief to choose between look-alikes adds **+1 point (4 chairs) → +6 (12) → +10 (20 chairs) → +14 to +15 points (5 look-alike classes)**. The gain vanishes once look-alikes are distinguishable (appearance spread 0.06). |
+| Language grounding (E3) | The staleness-aware resolver is **+2.7 to +2.8 points** more accurate than map-only, with intervals above 0. |
+
+**Decision:** under the pre-registered rule, **altitude is not a main claim**. The paper should lead with:
+1. the prior-calibration benchmark (E1);
+2. the cost-aware trust / verify / search policy, which is 17–20 % faster on moved objects;
+3. look-alike re-identification using the belief as a spatial prior.
+
+Altitude stays in as a reported negative result plus the fixed-height ablation. Stage 3 (Isaac Sim) should still include one scene where only an aerial view can see the target, to test the geometric explanation, rather than to rescue the claim.
 
 ## Limits of this simulation
 

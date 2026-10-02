@@ -124,6 +124,7 @@ def analyse_layout(records):
             tag=tag, layout=c["layout"], partition_h=c["partition_h"], clutter_h=c["clutter_h"], n=len(recs),
             gain=ci(recs, lambda r: rel_gain(r, "ours@0.4", "ours")),
             gain_moved=ci(recs, lambda r: rel_gain(r, "ours@0.4", "ours", subset="moved")),
+            gain_high=ci(recs, lambda r: rel_gain(r, "ours@0.4", "ours@1.8")),
             gain_trust=ci(recs, lambda r: rel_gain(r, "trust@0.4", "trust")),
             ours_vs_trust=ci(recs, lambda r: rel_gain(r, "trust", "ours")),
             ours_vs_verify=ci(recs, lambda r: rel_gain(r, "verify-always", "ours")),
@@ -168,7 +169,8 @@ def analyse_seeds(records):
 
 def analyse_sens(records):
     res = {}
-    for tag, recs in group_by_tag(records).items():
+    order = {label: i for i, (label, _o) in enumerate(SENS)}
+    for tag, recs in sorted(group_by_tag(records).items(), key=lambda kv: order.get(kv[0].split("|", 1)[1], 99)):
         base, label = tag.split("|", 1)
         res.setdefault(base, {})[label] = dict(
             gain=ci(recs, lambda r: rel_gain(r, "ours@0.4", "ours")),
@@ -181,7 +183,8 @@ def analyse_sens(records):
 
 def analyse_look(records):
     res = {}
-    for tag, recs in group_by_tag(records).items():
+    order = {label: i for i, (label, _o, _g) in enumerate(LOOK)}
+    for tag, recs in sorted(group_by_tag(records).items(), key=lambda kv: order.get(kv[0].split("|", 1)[1], 99)):
         base, label = tag.split("|", 1)
 
         def fail_share(r):
@@ -231,12 +234,17 @@ def report(R, out, runtime):
         w("## 1. Layout sweep\n")
         w(f"{len(rows)} layouts × {rows[0]['n']} seeds, 300 commands per run. \"Altitude saving\" = 1 − mean time with all "
           "altitudes / mean time at 0.4 m only, same policy, same commands.\n")
-        w("| Layout | Walls (m) | Clutter (m) | Altitude saving (ours) | … moved objects only | Altitude saving (trust baseline) | Ours vs trust: time saving | Ours − trust: success |")
-        w("|---|---|---|---|---|---|---|---|")
+        w("| Layout | Walls (m) | Clutter (m) | Altitude saving (ours) | … moved objects only | Always 1.8 m vs always 0.4 m | Altitude saving (trust baseline) | Ours vs trust: time saving | Ours − trust: success |")
+        w("|---|---|---|---|---|---|---|---|---|")
         for r in rows:
             w(f"| {r['layout']} | {r['partition_h']} | {r['clutter_h']} | {pct(r['gain'], True)} | "
-              f"{pct(r['gain_moved'], True)} | {pct(r['gain_trust'], True)} | {pct(r['ours_vs_trust'], True)} | "
-              f"{val(r['succ_diff'])} |")
+              f"{pct(r['gain_moved'], True)} | {pct(r['gain_high'], True)} | {pct(r['gain_trust'], True)} | "
+              f"{pct(r['ours_vs_trust'], True)} | {val(r['succ_diff'])} |")
+        best_high = max(rows, key=lambda r: r["gain_high"][0])
+        w(f"\nBest case for altitude, flying *always* at 1.8 m: {best_high['layout']} layout, walls "
+          f"{best_high['partition_h']} m, clutter {best_high['clutter_h']} m, saving {pct(best_high['gain_high'])}. "
+          "This is not the pre-registered metric (it compares two fixed heights instead of letting the policy "
+          "choose), and it still stays below the 10 % rule.\n")
         w("\nMean time (s) by altitude set, same policy (dose–response):\n")
         w("| Layout | Walls | Clutter | trust | ours @0.4 | ours @1.0 | ours @1.8 | ours (all) | oracle |")
         w("|---|---|---|---|---|---|---|---|---|")
@@ -249,7 +257,8 @@ def report(R, out, runtime):
 
     se = R.get("seeds")
     if se:
-        A = analyse_seeds(se)
+        order = ["open (1.3 m)", "cubicle (1.4 m)", "booth (1.4 m)", "booth dense (1.6 m + clutter)"]
+        A = dict(sorted(analyse_seeds(se).items(), key=lambda kv: order.index(kv[0]) if kv[0] in order else 99))
         n = next(iter(A.values()))["n"]
         w(f"## 2. Seed robustness ({n} independent six-week worlds per layout)\n")
         w("| Layout | Success: ours | Success: trust | Ours − trust | Time saving vs trust | … moved only | Time saving vs verify-always | Altitude saving |")
@@ -287,7 +296,7 @@ def report(R, out, runtime):
     if sn:
         res = analyse_sens(sn)
         w("## 3. Sensitivity to drone and sensing assumptions\n")
-        w(f"{len(STRESS_SEEDS) if not sn else len({r['seed'] for r in sn})} seeds per setting, 300 commands per run. "
+        w(f"{len({r['seed'] for r in sn})} seeds per setting, 300 commands per run. "
           "One parameter changed at a time from the default.\n")
         per_base = {}
         for base, items in res.items():
@@ -323,12 +332,12 @@ def report(R, out, runtime):
             for _label, _ov, g in LOOK:
                 if g is None:
                     continue
-                members = [("default", items["default (12 chairs)"])] + [
-                    (lab, items[lab]) for lab, _o, gg in LOOK if gg == g and lab in items]
+                members = [(lab, items[lab]) for lab, _o, gg in LOOK if gg == g and lab in items]
+                pos = 1 if g in ("How many chairs look alike", "Spread among look-alikes") else 0  # numeric order
+                members.insert(pos, ("default", items["default (12 chairs)"]))
                 groups[base][g] = [(lab, v["arms"]) for lab, v in members]
         w("\n![Look-alike stress](fig_s2_4_lookalike.png)\n")
-        if all(len(v) == 4 for v in groups[next(iter(groups))].values()):
-            plots2.lookalike_lines(groups, os.path.join(out, "fig_s2_4_lookalike.png"))
+        plots2.lookalike_lines(groups, os.path.join(out, "fig_s2_4_lookalike.png"))
 
     with open(os.path.join(out, "STAGE2.md"), "w") as fh:
         fh.write("\n".join(L) + "\n")
@@ -351,6 +360,9 @@ def main():
             R = pickle.load(fh)
     else:
         R = {}
+        if os.path.exists(pkl) and args.parts != "layout,seeds,sens,look":
+            with open(pkl, "rb") as fh:
+                R = pickle.load(fh)  # keep earlier parts; re-run only the requested ones
         for part in args.parts.split(","):
             tasks = build_tasks(part, args.quick)
             print(f"[{part}] {len(tasks)} chunks", flush=True)
