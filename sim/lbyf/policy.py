@@ -15,11 +15,12 @@ import numpy as np
 
 
 class Planner:
-    def __init__(self, drone, altitudes, approach_alt, max_rollout_steps=15):
+    def __init__(self, drone, altitudes, approach_alt, max_rollout_steps=15, V=None):
         self.d = drone
+        self.V = drone.V if V is None else V  # visibility matrix for the target's size group
         self.allowed = drone.allowed_vps(altitudes)
         self.approach_alt = approach_alt
-        P = drone.V.shape[1]
+        P = self.V.shape[1]
         self.P = P
         self.app = np.array([drone.approach_vp(pid, approach_alt) for pid in range(P)])
         self.max_steps = max_rollout_steps
@@ -29,7 +30,7 @@ class Planner:
 
     # --- greedy rule ----------------------------------------------------------------
     def next_vp(self, m, cur):
-        gains = self.d.V[self.allowed] @ m
+        gains = self.V[self.allowed] @ m
         cost = self.d.COST[cur, self.allowed] + self.d.obs_cost
         ratio = np.where(gains > 1e-9, gains / cost, -np.inf)
         i = int(np.argmax(ratio))
@@ -55,7 +56,7 @@ class Planner:
             c = self.d.COST[cur, vp] + self.d.obs_cost
             E += (m.sum() + absent) * c
             spent += c
-            found = m * self.d.V[vp]
+            found = m * self.V[vp]
             E += self._found_cost(found, vp)
             m -= found
             cur = vp
@@ -66,7 +67,7 @@ class Planner:
     def expected_cost_first(self, b, first_vp, cur):
         m, absent = b[:self.P].copy(), float(b[self.P])
         c = self.d.COST[cur, first_vp] + self.d.obs_cost
-        found = m * self.d.V[first_vp]
+        found = m * self.V[first_vp]
         rest = self.expected_cost_from(m - found, absent, first_vp)
         return c + self._found_cost(found, first_vp) + rest
 
@@ -75,7 +76,7 @@ class Planner:
         return int(self.app[mapped])
 
     def verify_candidates(self, mapped, cur, k=6, min_vis=0.3):
-        vis = self.d.V[self.allowed, mapped]
+        vis = self.V[self.allowed, mapped]
         ok = vis >= min_vis
         if not ok.any():
             return []

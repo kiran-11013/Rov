@@ -27,7 +27,7 @@ def observe(drone, world, state, vp, rng, cls_filter=None):
         o = world.objects[oid]
         if cls_filter is not None and o.cls != cls_filter:
             continue
-        if rng.random() < drone.V[vp, pid]:
+        if rng.random() < drone.V_for(o.cls)[vp, pid]:
             a = o.appearance + rng.normal(0, drone.cfg.obs_noise, size=o.appearance.shape)
             dets.append(Detection(oid, o.cls, pid, a / np.linalg.norm(a)))
     return dets

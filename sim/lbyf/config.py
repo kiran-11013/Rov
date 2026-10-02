@@ -40,6 +40,9 @@ class SimConfig:
     object_height: float = 0.2    # target point above the supporting surface
     reid_threshold: float = 0.93
     obs_noise: float = 0.05
+    visibility_model: str = "point"  # 'point' (Stages 1-2) | 'extended' (calibrated on Isaac Sim renders)
+    vis_a50_px: float = 200.0        # extended model: pixel area for half-maximal detection
+    vis_slope: float = 0.35          # extended model: logistic width in ln(pixels)
 
     # Experiments
     horizons_h: tuple = (1.0, 24.0)
@@ -58,7 +61,8 @@ class SimConfig:
         return (self.layout, self.partition_h, self.clutter_h, self.v_xy, self.v_z, self.hover_power_w,
                 self.mass_kg, self.climb_efficiency, self.energy_weight, self.observe_time_s, self.altitudes,
                 self.fixed_altitude, self.cruise_altitude, self.vantage_spacing, self.grid_res,
-                self.path_inflation, self.approach_ring, self.max_range, self.object_height)
+                self.path_inflation, self.approach_ring, self.max_range, self.object_height,
+                self.visibility_model, self.vis_a50_px, self.vis_slope)
 
     @classmethod
     def quick(cls, **kw):

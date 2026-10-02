@@ -19,23 +19,12 @@ sys.path.insert(0, os.path.join(HERE, "..", "sim"))
 
 from lbyf.config import SimConfig  # noqa: E402
 from lbyf.drone import DroneModel  # noqa: E402
+from lbyf.visibility import CLASS_DIMS  # noqa: E402
 from lbyf.dynamics import ABSENT, simulate_history  # noqa: E402
 from lbyf.world import make_world  # noqa: E402
 
-# Proxy geometry per class: ("box", (sx, sy, sz)) or ("cyl", (radius, height)), metres, resting on its surface.
-CLASS_SHAPES = {
-    "chair": ("box", (0.45, 0.45, 0.90)),
-    "stool": ("cyl", (0.18, 0.45)),
-    "cart": ("box", (0.80, 0.50, 0.90)),
-    "bag": ("box", (0.35, 0.15, 0.40)),
-    "laptop": ("box", (0.33, 0.23, 0.03)),
-    "monitor": ("box", (0.55, 0.06, 0.35)),
-    "box": ("box", (0.40, 0.30, 0.30)),
-    "bin": ("cyl", (0.15, 0.40)),
-    "plant": ("cyl", (0.12, 0.50)),
-    "toolbox": ("box", (0.40, 0.20, 0.20)),
-    "mug": ("cyl", (0.045, 0.10)),
-}
+# Proxy geometry per class lives in the simulator, so the render and the model use the same sizes.
+CLASS_SHAPES = CLASS_DIMS
 WALL_HEIGHT = 2.6
 
 

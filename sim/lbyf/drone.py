@@ -6,6 +6,7 @@ the drone detects an object resting on `place` when hovering at `vp` (line of si
 import numpy as np
 
 from .geometry import Grid, detection_prob
+from .visibility import GROUP_OF, VisParams, group_footprint, visible_pixels, detect_prob
 
 
 class DroneModel:
@@ -101,6 +102,29 @@ class DroneModel:
                 if abs(ex - t[0]) + abs(ey - t[1]) <= cfg.max_range * 1.5:
                     V[v, j] = detection_prob(world, eye, t, cfg.max_range)
         self.V = V
+        self.V_group = {}
+        if getattr(cfg, "visibility_model", "point") == "extended":
+            self.V_group = self._extended_matrices(world, cfg)
+            self.V = self.V_group["medium"]
+
+    def _extended_matrices(self, world, cfg):
+        """One visibility matrix per object size group (see visibility.py)."""
+        prm = VisParams(a50_px=cfg.vis_a50_px, slope=cfg.vis_slope)
+        out = {}
+        for group in sorted(set(GROUP_OF.values())):
+            width, height, top = group_footprint(group)
+            M = np.zeros((self.n_vp, len(world.places)))
+            for v in range(self.n_vp):
+                ex, ey = self.node_xy[self.vp_node[v]]
+                eye = (ex, ey, float(self.vp_alt[v]))
+                for j, p in enumerate(world.places):
+                    M[v, j] = detect_prob(visible_pixels(world, eye, p.x, p.y, p.z, width, height, top, prm), prm)
+            out[group] = M
+        return out
+
+    def V_for(self, cls):
+        """Visibility matrix for objects of class `cls` (size-group specific under the extended model)."""
+        return self.V_group.get(GROUP_OF.get(cls), self.V) if self.V_group else self.V
 
     # ---- helpers -----------------------------------------------------------------
     def vp(self, node, alt):

@@ -63,11 +63,13 @@ class Executor:
         """Start/approach height: the allowed altitude closest to the configured cruise altitude."""
         return min(altitudes, key=lambda a: (abs(a - self.cfg.cruise_altitude), a))
 
-    def planner_for(self, altitudes):
-        """Planner restricted to the given altitudes; it starts and approaches at `home_altitude`."""
-        key = tuple(sorted(altitudes))
+    def planner_for(self, altitudes, cls=None):
+        """Planner restricted to the given altitudes, using the visibility matrix of `cls`'s size group;
+        it starts and approaches at `home_altitude`."""
+        V = self.d.V_for(cls) if cls is not None else self.d.V
+        key = (tuple(sorted(altitudes)), id(V))
         if key not in self._planners:
-            self._planners[key] = Planner(self.d, key, self.home_altitude(key))
+            self._planners[key] = Planner(self.d, key[0], self.home_altitude(key[0]), V=V)
         return self._planners[key]
 
     def arm_altitudes(self, arm):
@@ -84,7 +86,7 @@ class Executor:
     def run(self, arm, cmd, state_now, rng):
         cfg, d = self.cfg, self.d
         alts = self.arm_altitudes(arm)
-        pl = self.planner_for(alts)
+        pl = self.planner_for(alts, self.world.objects[cmd.oid].cls)
         cur = d.dock_vp(self.home_altitude(alts))
         target = self.world.objects[cmd.oid]
 
@@ -126,7 +128,7 @@ class Executor:
                 return Result(arm.name, cmd.idx, hit.oid == cmd.oid, True, float(t_fin),
                               float(e + d.ENERGY[cur, app]), wasted, action)
             wasted += 1
-            m *= 1.0 - d.V[vp]
+            m *= 1.0 - pl.V[vp]
             if m.sum() < 1e-6:  # belief exhausted: fall back to a sweep over all compatible places
                 m = np.zeros(pl.P)
                 m[comp] = 1.0 / len(comp)

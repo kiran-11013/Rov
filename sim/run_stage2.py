@@ -71,8 +71,18 @@ def ci(recs, fn):
     return mean_ci([fn(r) for r in recs])
 
 
+EXTRA = {}  # applied to every configuration (e.g. the extended visibility model)
+
+
 # ----------------------------------------------------------------------------- run
 def build_tasks(part, quick):
+    tasks = _build_tasks(part, quick)
+    for t in tasks:
+        t["cfg"] = {**t["cfg"], **EXTRA}
+    return tasks
+
+
+def _build_tasks(part, quick):
     if part == "layout":
         grid = {}
         for ph in (1.0, 1.3, 1.6, 1.9):
@@ -208,6 +218,10 @@ def report(R, out, runtime):
     w = L.append
     lay = R.get("layout")
     w("# Stage 2: stress-testing the simulated claims\n")
+    if EXTRA or any(r["cfg"].get("visibility_model") == "extended" for part in R.values() for r in part[:1]):
+        cfg0 = next(iter(R.values()))[0]["cfg"]
+        w(f"**Visibility model: extended** (a50 = {cfg0.get('vis_a50_px')} px), calibrated against Isaac Sim renders "
+          "instead of the Stage 1-2 point model.\n")
     w(f"Runtime {runtime:.0f} s. Everything here comes from the simulator (`sim/`), not from real flights. "
       "Seeds are the independent unit; intervals are Student-t 95 % across seeds. Stand-in priors are hand-set, "
       "not real LLM output.\n")
@@ -351,7 +365,11 @@ def main():
     ap.add_argument("--parts", default="layout,seeds,sens,look")
     ap.add_argument("--out", default=os.path.join(HERE, "results", "stage2"))
     ap.add_argument("--processes", type=int, default=4)
+    ap.add_argument("--visibility", choices=("point", "extended"), default="point")
+    ap.add_argument("--a50", type=float, default=200.0, help="extended model pixel threshold")
     args = ap.parse_args()
+    if args.visibility == "extended":
+        EXTRA.update(visibility_model="extended", vis_a50_px=args.a50)
     os.makedirs(args.out, exist_ok=True)
     pkl = os.path.join(args.out, "records.pkl")
     t0 = time.time()
