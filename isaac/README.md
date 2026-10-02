@@ -103,3 +103,4 @@ Re-identification (uses the same frames and `detections_raw.json`; downloads DIN
 ```bash
 ~/isaacsim/python.sh isaac/reid_frames.py --spec isaac/out/spec_open.json --frames isaac/out/frames_open_real
 ```
+Results: `results/open_real_REID.md`.
