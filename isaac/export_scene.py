@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "sim"))
 
 from lbyf.config import SimConfig  # noqa: E402
 from lbyf.drone import DroneModel  # noqa: E402
-from lbyf.visibility import CLASS_DIMS  # noqa: E402
+from lbyf.visibility import CLASS_DIMS, class_dims  # noqa: E402
 from lbyf.dynamics import ABSENT, simulate_history  # noqa: E402
 from lbyf.world import make_world  # noqa: E402
 
@@ -48,7 +48,7 @@ def build_spec(cfg, t=None, n_nodes=30, yaws=(0, 90, 180, 270), sample_seed=0):
         if pid == ABSENT:
             continue
         o, p = world.objects[oid], world.places[pid]
-        shape, dims = CLASS_SHAPES[o.cls]
+        shape, dims = class_dims(o.cls, getattr(cfg, "laptop_open", False))
         objects.append({"oid": oid, "cls": o.cls, "colour": o.colour, "pid": pid, "x": p.x, "y": p.y,
                         "z_base": p.z, "kind": p.kind, "shape": shape, "dims": list(dims),
                         "prim": f"/World/Objects/obj_{oid}"})
@@ -90,9 +90,11 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--time-h", type=float, default=None)
     ap.add_argument("--nodes", type=int, default=30)
+    ap.add_argument("--laptop-open", action="store_true", help="laptops as open (screen up, 25 cm tall)")
     ap.add_argument("--out", default=os.path.join(HERE, "out", "scene_spec.json"))
     args = ap.parse_args()
-    cfg = SimConfig(seed=args.seed, layout=args.layout, partition_h=args.partition_h, clutter_h=args.clutter_h)
+    cfg = SimConfig(seed=args.seed, layout=args.layout, partition_h=args.partition_h, clutter_h=args.clutter_h,
+                    laptop_open=args.laptop_open)
     spec = build_spec(cfg, args.time_h, args.nodes)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as fh:

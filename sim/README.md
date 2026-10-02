@@ -79,12 +79,34 @@ Stage 1 used one seed and two layouts. Stage 2 checks whether its conclusions su
 | Look-alikes | Every instance-level failure is a look-alike swap; intent success is 100 %. Using the belief to choose between look-alikes adds **+1 point (4 chairs) → +6 (12) → +10 (20 chairs) → +14 to +15 points (5 look-alike classes)**. The gain vanishes once look-alikes are distinguishable (appearance spread 0.06). |
 | Language grounding (E3) | The staleness-aware resolver is **+2.7 to +2.8 points** more accurate than map-only, with intervals above 0. |
 
-**Decision:** under the pre-registered rule, **altitude is not a main claim**. The paper should lead with:
+**Decision (point model; superseded by the Stage 3a update below):** under the pre-registered rule, **altitude is not a main claim**. The paper should lead with:
 1. the prior-calibration benchmark (E1);
 2. the cost-aware trust / verify / search policy, which is 17–20 % faster on moved objects;
 3. look-alike re-identification using the belief as a spatial prior.
 
 Altitude stays in as a reported negative result plus the fixed-height ablation. Stage 3 (Isaac Sim) should still include one scene where only an aerial view can see the target, to test the geometric explanation, rather than to rescue the claim.
+
+## Stage 3a update: the altitude result reverses once visibility is calibrated on renders
+
+The "no" above came from the point visibility model. Isaac Sim renders (3 layouts, 30 viewpoints × 3 altitudes × 4 yaws each; `../isaac/`) show that model under-counts what altitude reveals. The calibrated extended model (`+top`, a50 = 224.5 px, held-out agreement 96.2 %) gives a different answer, and the gain has a narrow cause.
+
+| Run | Altitude saving (all 20 layouts) | Where it comes from |
+|---|---|---|
+| Point model (above) | ≤ 1.7 % — FAIL | — |
+| Calibrated, laptops as closed 3 cm slabs (`results/stage2_calibrated/`) | ~63 % — PASS | laptops (success 0.15 → 1.00) and mugs (0.81 → 1.00) |
+| Calibrated, laptops open, 25 cm tall (`results/stage2_calibrated_laptop_open/`) | 38–39 % — PASS | mugs only (0.81 → 1.00, mean 77 s → 16 s) |
+
+Every other class shows no altitude effect in either calibrated run.
+
+**The renders back up this mechanism and say the model is conservative.** Render-visible rate at 0.4 / 1.0 / 1.8 m:
+- closed laptop: booth 1.3 / 6.0 / 10.7 %, open layout 2.0 / 10.7 / 26.7 %, cubicle 0.7 / 9.3 / 14.0 %;
+- mug: booth 2.4 / 4.8 / 8.1 %, open layout 2.9 / 11.9 / 17.1 %, cubicle 1.9 / 4.8 / 9.0 %.
+
+From 0.4 m the desk edge hides them. The model still says 7–19 % are visible at 0.4 m, so it *overstates* low-altitude visibility of small, flat objects, and the true gain is likely larger. Renders also show gains the model misses for monitors and chairs, e.g. 10.6 → 29.4 % and 16.7 → 39.4 % in the open layout.
+
+**Revised claim.** "Altitude helps" is too broad. The defensible claim is that **a vantage point pays off for small or flat objects on surfaces above camera height, and is irrelevant for floor-standing ones**. The size of the gain therefore depends on what the user asks for. The paper should report it per object class, not as one number.
+
+Open check: the renders used closed-laptop proxies. Re-render with `export_scene.py --laptop-open` to see whether open laptops are visible from 0.4 m.
 
 ## Limits of this simulation
 
