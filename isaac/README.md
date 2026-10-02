@@ -98,3 +98,8 @@ cd ~/rov && git pull
 `fly_episode.py` also accepts `--assets real`.
 
 Results (open layout): `results/open_real_DETECTION.md`.
+
+Re-identification (uses the same frames and `detections_raw.json`; downloads DINOv2 through torch.hub on first run):
+```bash
+~/isaacsim/python.sh isaac/reid_frames.py --spec isaac/out/spec_open.json --frames isaac/out/frames_open_real
+```
