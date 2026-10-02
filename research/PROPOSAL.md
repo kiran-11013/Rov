@@ -208,7 +208,7 @@ YOLO-World on realistic renders, 3 layouts, operating at ≤ 0.5 background fals
 ## 11. Risks
 | Risk | Mitigation |
 |---|---|
-| Policy gain is small (~9 %) | Lead with identity (RQ2, +17–21 pts); policy as the second contribution |
+| Policy gain is small (~7 %) | Lead with identity (RQ2, +17–21 pts); policy as the second contribution |
 | Detector misses whole classes (closed laptops) | Report per class; try another detector (YOLOE / Grounding DINO) |
 | Renders ≠ real images | E3 checks the fitted model on real drone frames before the flights |
 | Few relocation events | More objects, a busier space, hierarchical pooling |
