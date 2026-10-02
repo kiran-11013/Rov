@@ -6,7 +6,7 @@ the drone detects an object resting on `place` when hovering at `vp` (line of si
 import numpy as np
 
 from .geometry import Grid, detection_prob
-from .visibility import GROUP_OF, VisParams, group_footprint, visible_pixels, detect_prob
+from .visibility import GROUP_OF, VisParams, detect_prob, group_footprint, learned_detect_prob, visible_pixels
 
 
 class DroneModel:
@@ -108,8 +108,10 @@ class DroneModel:
             self.V = self.V_group["medium"]
 
     def _extended_matrices(self, world, cfg):
-        """One visibility matrix per object size group (see visibility.py)."""
+        """One visibility matrix per object size group (see visibility.py). With cfg.det_coef, detection follows a
+        model fitted to a real detector: sigmoid(b0 + b1 ln px + b2 down/30deg), down = camera looking-down angle."""
         prm = VisParams(a50_px=cfg.vis_a50_px, slope=cfg.vis_slope, p_max=getattr(cfg, "vis_pmax", 0.95))
+        coef = {g: (b0, b1, b2) for g, b0, b1, b2 in getattr(cfg, "det_coef", ())}
         out = {}
         for group in sorted(set(GROUP_OF.values())):
             width, height, top = group_footprint(group, getattr(cfg, "laptop_open", False))
@@ -118,7 +120,11 @@ class DroneModel:
                 ex, ey = self.node_xy[self.vp_node[v]]
                 eye = (ex, ey, float(self.vp_alt[v]))
                 for j, p in enumerate(world.places):
-                    M[v, j] = detect_prob(visible_pixels(world, eye, p.x, p.y, p.z, width, height, top, prm), prm)
+                    px = visible_pixels(world, eye, p.x, p.y, p.z, width, height, top, prm)
+                    if group in coef:
+                        M[v, j] = learned_detect_prob(px, eye, (p.x, p.y, p.z + height / 2), coef[group])
+                    else:
+                        M[v, j] = detect_prob(px, prm)
             out[group] = M
         return out
 

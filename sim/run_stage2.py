@@ -5,6 +5,7 @@
     python run_stage2.py --from-pickle   # re-analyse saved records without re-simulating
 """
 import argparse
+import json
 import os
 import pickle
 import time
@@ -223,6 +224,9 @@ def report(R, out, runtime):
     w("# Stage 2: stress-testing the simulated claims\n")
     if EXTRA or any(r["cfg"].get("visibility_model") == "extended" for part in R.values() for r in part[:1]):
         cfg0 = next(iter(R.values()))[0]["cfg"]
+        if cfg0.get("det_coef"):
+            w("**Detection model: fitted to a real detector** (YOLO-World on Isaac Sim renders, per size group and "
+              f"viewing angle; coefficients {cfg0.get('det_coef')}).\n")
         w(f"**Visibility model: extended** (a50 = {cfg0.get('vis_a50_px')} px, slope {cfg0.get('vis_slope', 0.35)}, "
           f"p_max {cfg0.get('vis_pmax', 0.95)}), calibrated against Isaac Sim renders "
           "instead of the Stage 1-2 point model.\n")
@@ -387,11 +391,17 @@ def main():
     ap.add_argument("--laptop-open", action="store_true", help="extended model: laptops open (screen up)")
     ap.add_argument("--slope", type=float, default=0.35, help="extended model: logistic width in ln(pixels)")
     ap.add_argument("--pmax", type=float, default=0.95, help="extended model: detection probability for large objects")
+    ap.add_argument("--det-model", default=None, help="JSON from isaac/fit_detection_model.py (fitted real detector)")
     args = ap.parse_args()
     if args.visibility == "extended":
         EXTRA.update(visibility_model="extended", vis_a50_px=args.a50, vis_slope=args.slope, vis_pmax=args.pmax)
     if args.laptop_open:
         EXTRA.update(laptop_open=True)
+    if args.det_model:
+        with open(args.det_model) as fh:
+            coef = json.load(fh)["coef"]
+        EXTRA.update(visibility_model="extended",
+                     det_coef=tuple((g, *map(float, c)) for g, c in sorted(coef.items()) if c is not None))
     os.makedirs(args.out, exist_ok=True)
     pkl = os.path.join(args.out, "records.pkl")
     t0 = time.time()

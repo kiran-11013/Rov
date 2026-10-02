@@ -44,6 +44,7 @@ class SimConfig:
     vis_a50_px: float = 200.0        # extended model: pixel area for half-maximal detection
     vis_slope: float = 0.35          # extended model: logistic width in ln(pixels)
     vis_pmax: float = 0.95           # extended model: detection probability for very large objects
+    det_coef: tuple = ()             # fitted real-detector model: ((group, b0, b1, b2), ...); empty = logistic curve
     laptop_open: bool = False        # extended model: laptops open (screen up, ~0.25 m tall) instead of closed (3 cm)
 
     # Experiments
@@ -64,7 +65,7 @@ class SimConfig:
                 self.mass_kg, self.climb_efficiency, self.energy_weight, self.observe_time_s, self.altitudes,
                 self.fixed_altitude, self.cruise_altitude, self.vantage_spacing, self.grid_res,
                 self.path_inflation, self.approach_ring, self.max_range, self.object_height,
-                self.visibility_model, self.vis_a50_px, self.vis_slope, self.vis_pmax, self.laptop_open)
+                self.visibility_model, self.vis_a50_px, self.vis_slope, self.vis_pmax, self.det_coef, self.laptop_open)
 
     @classmethod
     def quick(cls, **kw):

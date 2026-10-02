@@ -121,5 +121,16 @@ def detect_prob(px, prm):
     return prm.p_max / (1.0 + math.exp(-(math.log(px) - math.log(prm.a50_px)) / prm.slope))
 
 
+def learned_detect_prob(px, eye, centre, coef):
+    """Real-detector model fitted on Isaac Sim renders (isaac/fit_detection_model.py):
+    sigmoid(b0 + b1 ln px + b2 down/30deg), down = how steeply the camera looks down at the object centre."""
+    if px <= 0:
+        return 0.0
+    b0, b1, b2 = coef
+    down = math.degrees(math.atan2(eye[2] - centre[2], max(math.hypot(centre[0] - eye[0], centre[1] - eye[1]), 1e-3)))
+    z = b0 + b1 * math.log(px) + b2 * max(down, 0.0) / 30.0
+    return 1.0 / (1.0 + math.exp(-max(min(z, 30.0), -30.0)))
+
+
 def detection_prob_extended(world, eye, x, y, z_base, width, height, top_area, prm):
     return detect_prob(visible_pixels(world, eye, x, y, z_base, width, height, top_area, prm), prm)
