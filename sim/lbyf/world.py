@@ -112,10 +112,14 @@ def _desk_places(box, room, start_pid):
     return [Place(start_pid + i, room, x, y, box.h, "table") for i, (x, y) in enumerate(pts)]
 
 
-def make_world(seed=0, appearance_dim=16, layout="open"):
-    """layout='open': short free-standing partitions (sight lines run around their ends).
-    layout='cubicle': each lab desk is enclosed on three sides by 1.4 m cubicle walls, open to the aisle."""
-    if layout not in ("open", "cubicle"):
+def make_world(seed=0, appearance_dim=16, layout="open", partition_h=None, clutter_h=0.0, n_chairs=12,
+               identical_classes=("chair",), identical_sigma=0.02):
+    """layout='open':    short free-standing partitions (sight lines run around their ends), default 1.3 m.
+    layout='cubicle': each lab desk is enclosed on three sides by cubicle walls (default 1.4 m), open to the aisle.
+    layout='booth':   cubicle plus a front wall along the aisle with a 1 m door gap, so low views must enter.
+    partition_h overrides the wall height; clutter_h adds a block of that height above each desk's centre.
+    n_chairs / identical_classes / identical_sigma control how many objects look alike."""
+    if layout not in ("open", "cubicle", "booth"):
         raise ValueError(f"unknown layout {layout!r}")
     rng = np.random.default_rng(seed)
     rooms = {"lab": (0.0, 0.0, 10.0, 8.0), "corridor": (10.0, 0.0, 12.0, 8.0), "store": (12.0, 0.0, 18.0, 8.0)}
@@ -126,18 +130,28 @@ def make_world(seed=0, appearance_dim=16, layout="open"):
              Box("desk3", 5.2, 1.1, 6.8, 1.9, 0.75), Box("desk4", 5.2, 6.1, 6.8, 6.9, 0.75)]
     side_table = Box("side_table", 0.2, 3.0, 0.9, 5.0, 0.75)
     store_table = Box("store_table", 13.4, 6.6, 15.2, 7.6, 0.75)
+    ph = partition_h if partition_h is not None else (1.3 if layout == "open" else 1.4)
     if layout == "open":
-        partitions = [Box("part1", 3.9, 0.2, 4.1, 3.0, 1.3), Box("part2", 3.9, 5.0, 4.1, 7.8, 1.3),
-                      Box("part3", 7.9, 0.2, 8.1, 3.0, 1.3), Box("part4", 7.9, 5.0, 8.1, 7.8, 1.3)]
+        partitions = [Box("part1", 3.9, 0.2, 4.1, 3.0, ph), Box("part2", 3.9, 5.0, 4.1, 7.8, ph),
+                      Box("part3", 7.9, 0.2, 8.1, 3.0, ph), Box("part4", 7.9, 5.0, 8.1, 7.8, ph)]
     else:  # side walls for every desk, open toward the central aisle (y 3-5)
         partitions = []
         for i, (xa, xb) in enumerate(((0.85, 3.15), (4.85, 7.15))):
             for j, (ya, yb) in enumerate(((0.25, 2.9), (5.1, 7.75))):
-                partitions.append(Box(f"cub{i}{j}w", xa, ya, xa + 0.1, yb, 1.4))
-                partitions.append(Box(f"cub{i}{j}e", xb - 0.1, ya, xb, yb, 1.4))
+                partitions.append(Box(f"cub{i}{j}w", xa, ya, xa + 0.1, yb, ph))
+                partitions.append(Box(f"cub{i}{j}e", xb - 0.1, ya, xb, yb, ph))
+                if layout == "booth":  # front wall on the aisle side, 1 m door gap at the east end
+                    y_front = (yb - 0.1, yb) if j == 0 else (ya, ya + 0.1)
+                    partitions.append(Box(f"cub{i}{j}f", xa + 0.1, y_front[0], xb - 1.1, y_front[1], ph))
     lab_shelf = Box("lab_shelf", 8.7, 0.3, 9.7, 1.0, 2.0)
     store_shelves = [Box("shelf_a", 13.0, 2.0, 17.0, 2.6, 2.0), Box("shelf_b", 13.0, 4.6, 17.0, 5.2, 2.0)]
-    boxes = desks + [side_table, store_table] + partitions + [lab_shelf] + store_shelves
+    clutter = []
+    if clutter_h > 0:
+        for d in desks + [store_table]:
+            cx, cy = (d.x0 + d.x1) / 2, (d.y0 + d.y1) / 2
+            clutter.append(Box(f"clutter_{d.name}", cx - 0.2, cy - 0.12, cx + 0.2, cy + 0.12, d.h + clutter_h,
+                               blocks_path=False))
+    boxes = desks + [side_table, store_table] + partitions + clutter + [lab_shelf] + store_shelves
 
     places = []
 
@@ -155,7 +169,7 @@ def make_world(seed=0, appearance_dim=16, layout="open"):
                  (1.6, 0.6), (2.4, 0.6), (1.6, 7.4), (2.4, 7.4), (5.6, 0.6), (6.4, 0.6), (5.6, 7.4), (6.4, 7.4),
                  (3.0, 3.6), (3.0, 4.4), (5.0, 3.6), (5.0, 4.4), (7.0, 3.6), (7.0, 4.4), (9.2, 3.0), (9.2, 5.0),
                  (9.4, 7.4), (4.6, 7.4), (4.6, 0.6), (0.5, 7.4), (0.5, 0.6)]
-    if layout == "cubicle":  # chairs live on the aisle side of an enclosed desk, not behind it
+    if layout in ("cubicle", "booth"):  # chairs live on the aisle side of an enclosed desk, not behind it
         behind_desk = {(1.6, 0.6): (1.25, 2.75), (2.4, 0.6): (2.75, 2.75), (5.6, 0.6): (5.25, 2.75),
                        (6.4, 0.6): (6.75, 2.75), (1.6, 7.4): (1.25, 5.25), (2.4, 7.4): (2.75, 5.25),
                        (5.6, 7.4): (5.25, 5.25), (6.4, 7.4): (6.75, 5.25),
@@ -178,8 +192,8 @@ def make_world(seed=0, appearance_dim=16, layout="open"):
                     add("store", x, face_y, z, "shelf")
 
     classes = {}
-    for name, kinds, k, scale, same, periodic, identical, cs, _n in CLASS_TABLE:
-        classes[name] = ObjectClass(name, kinds, k, scale, same, periodic, identical, cs)
+    for name, kinds, k, scale, same, periodic, _identical, cs, _n in CLASS_TABLE:
+        classes[name] = ObjectClass(name, kinds, k, scale, same, periodic, name in identical_classes, cs)
 
     # appearance embeddings: class base + colour + instance deviation (tiny for identical classes)
     base = {c: _unit(rng.normal(size=appearance_dim)) for c in classes}
@@ -187,9 +201,10 @@ def make_world(seed=0, appearance_dim=16, layout="open"):
     objects = []
     for name, *_rest, n in CLASS_TABLE:
         cl = classes[name]
+        n = n_chairs if name == "chair" else n
         for _ in range(n):
             colour = "black" if cl.identical else COLOURS[rng.integers(len(COLOURS))]
-            sigma = 0.02 if cl.identical else 0.5
+            sigma = identical_sigma if cl.identical else 0.5
             app = _unit(base[name] + 0.3 * colour_vec[colour] + sigma * rng.normal(size=appearance_dim))
             objects.append(ObjectInstance(len(objects), name, colour, app))
 

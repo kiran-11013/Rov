@@ -63,7 +63,7 @@ def test_policy_expected_cost_decreases_with_confidence(ctx):
     from lbyf.belief import make_belief
     from lbyf.episode import Executor
     ex = Executor(ctx.drone, ctx.world, ctx.cfg, ctx.disp, ctx.ours)
-    pl = ex.planners[False]
+    pl = ex.planner_for(tuple(ctx.cfg.altitudes))
     cur = ctx.drone.dock_vp(ctx.cfg.cruise_altitude)
     costs = []
     for p in (0.1, 0.5, 0.99):

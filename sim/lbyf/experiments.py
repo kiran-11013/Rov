@@ -1,4 +1,5 @@
 """E1 (priors), E2 (command trials with all arms), E3 (grounding) and the decision-region analysis."""
+import copy
 from collections import Counter
 from dataclasses import dataclass
 
@@ -30,11 +31,19 @@ class Context:
     rng: object
 
 
-def setup(cfg):
+def setup(cfg, drone_cache=None):
+    """drone_cache: dict reused across calls; the drone matrices depend only on geometry and drone settings."""
     rng = np.random.default_rng(cfg.seed)
-    world = make_world(cfg.seed, layout=cfg.layout)
+    world = make_world(cfg.seed, **cfg.world_kwargs())
     history = simulate_history(world, cfg, rng)
-    drone = DroneModel(world, cfg)
+    key = cfg.drone_key()
+    if drone_cache is not None and key in drone_cache:
+        drone = copy.copy(drone_cache[key])
+        drone.cfg, drone.world = cfg, world
+    else:
+        drone = DroneModel(world, cfg)
+        if drone_cache is not None:
+            drone_cache[key] = copy.copy(drone)
     train_end, test_end = cfg.train_days * 24.0, cfg.days * 24.0
     priors = {}
     for p in (GlobalConstant(), PersistenceFilterPrior(), CommonsensePrior(), HumanGuessPrior(seed=cfg.seed),
@@ -192,7 +201,8 @@ def decision_regions(ctx, cls="laptop", mapped_pid=4, dt=24.0, n=41):
     ps = np.linspace(0.0, 1.0, n)
     out = {}
     for fixed in (False, True):
-        pl = ex.planners[fixed]
+        alts = (cfg.fixed_altitude,) if fixed else tuple(cfg.altitudes)
+        pl = ex.planner_for(alts)
         cur = ctx.drone.dock_vp(cfg.fixed_altitude if fixed else cfg.cruise_altitude)
         costs = {"trust": [], "verify": [], "search": []}
         chosen = []

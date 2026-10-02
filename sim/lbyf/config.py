@@ -5,7 +5,12 @@ from dataclasses import dataclass
 @dataclass
 class SimConfig:
     seed: int = 0
-    layout: str = "open"       # 'open' | 'cubicle' (see world.make_world)
+    layout: str = "open"       # 'open' | 'cubicle' | 'booth' (see world.make_world)
+    partition_h: float = None  # partition / cubicle-wall height in m (None = layout default)
+    clutter_h: float = 0.0     # height of a block of clutter in the middle of every desk (0 = none)
+    n_chairs: int = 12         # number of identical-looking chairs
+    identical_classes: tuple = ("chair",)  # classes whose instances look the same
+    identical_sigma: float = 0.02          # appearance spread among identical instances
 
     # Persistence logging (E1)
     days: int = 42              # six weeks of simulated object movement
@@ -42,6 +47,18 @@ class SimConfig:
     n_grounding: int = 600
     conformal_alpha: float = 0.1
     n_boot: int = 1000
+
+    def world_kwargs(self):
+        return dict(layout=self.layout, partition_h=self.partition_h, clutter_h=self.clutter_h,
+                    n_chairs=self.n_chairs, identical_classes=self.identical_classes,
+                    identical_sigma=self.identical_sigma)
+
+    def drone_key(self):
+        """Everything the precomputed drone matrices depend on (not the seed, history or perception)."""
+        return (self.layout, self.partition_h, self.clutter_h, self.v_xy, self.v_z, self.hover_power_w,
+                self.mass_kg, self.climb_efficiency, self.energy_weight, self.observe_time_s, self.altitudes,
+                self.fixed_altitude, self.cruise_altitude, self.vantage_spacing, self.grid_res,
+                self.path_inflation, self.approach_ring, self.max_range, self.object_height)
 
     @classmethod
     def quick(cls, **kw):

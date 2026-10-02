@@ -49,6 +49,7 @@ class Arm:
     first: str             # 'trust' | 'verify' | 'ours' | 'search' | 'oracle'
     fixed_height: bool = False
     spatial_reid: bool = True  # use the belief as a spatial prior when re-identifying
+    altitudes: tuple = None    # explicit altitude set (overrides fixed_height); None = all configured altitudes
 
 
 class Executor:
@@ -56,11 +57,20 @@ class Executor:
         self.d, self.world, self.cfg = drone, world, cfg
         self.disp = displacement
         self.absent_model = absent_model  # prior exposing absent_given_moved(cls, dt), shared by all arms
-        alts_full = tuple(cfg.altitudes)
-        self.planners = {
-            False: Planner(drone, alts_full, cfg.cruise_altitude),
-            True: Planner(drone, (cfg.fixed_altitude,), cfg.fixed_altitude),
-        }
+        self._planners = {}
+
+    def planner_for(self, altitudes):
+        """Planner restricted to the given altitudes; a single altitude is also the cruise/approach height."""
+        key = tuple(sorted(altitudes))
+        if key not in self._planners:
+            approach = key[0] if len(key) == 1 else self.cfg.cruise_altitude
+            self._planners[key] = Planner(self.d, key, approach)
+        return self._planners[key]
+
+    def arm_altitudes(self, arm):
+        if arm.altitudes is not None:
+            return tuple(arm.altitudes)
+        return (self.cfg.fixed_altitude,) if arm.fixed_height else tuple(self.cfg.altitudes)
 
     def belief(self, prior, cmd):
         cls = self.world.objects[cmd.oid].cls
@@ -70,8 +80,9 @@ class Executor:
 
     def run(self, arm, cmd, state_now, rng):
         cfg, d = self.cfg, self.d
-        pl = self.planners[arm.fixed_height]
-        alt0 = cfg.fixed_altitude if arm.fixed_height else cfg.cruise_altitude
+        alts = self.arm_altitudes(arm)
+        pl = self.planner_for(alts)
+        alt0 = alts[0] if len(alts) == 1 else cfg.cruise_altitude
         cur = d.dock_vp(alt0)
         target = self.world.objects[cmd.oid]
 
