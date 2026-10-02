@@ -10,7 +10,7 @@
  "box": "Isaac/Environments/Office/Props/SM_Box.usd",
  "bin": "Isaac/Environments/Office/Props/SM_TrashCan.usd",
  "plant": "Isaac/Environments/Office/Props/SM_Plant01.usd",
- "toolbox": "Isaac/Environments/Hospital/Props/SM_Toolkit_02f.usd",
+ "toolbox": "Isaac/Environments/Office/Props/SM_Briefcase.usd",
  "mug": ["Isaac/Props/Mugs/SM_Mug_A2.usd", "Isaac/Props/Mugs/SM_Mug_B1.usd", "Isaac/Props/Mugs/SM_Mug_C1.usd",
          "Isaac/Props/Mugs/SM_Mug_D1.usd"]
 }

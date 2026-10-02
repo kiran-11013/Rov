@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw
 
 PROMPTS = {"chair": "office chair", "stool": "stool", "cart": "cart", "bag": "bag", "laptop": "laptop",
            "monitor": "computer monitor", "box": "cardboard box", "bin": "trash can", "plant": "potted plant",
-           "toolbox": "toolbox", "mug": "mug"}
+           "toolbox": "briefcase", "mug": "mug"}  # toolbox class is a briefcase model (no toolbox in the library)
 OBJ_RE = re.compile(r"/World/Objects/obj_(\d+)")
 PX_BINS = [1, 50, 200, 800, 3200, 12800, 10 ** 9]
 
