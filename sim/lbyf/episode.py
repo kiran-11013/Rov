@@ -83,16 +83,20 @@ class Executor:
         q_abs = self.absent_model.absent_given_moved(cls, cmd.dt)
         return make_belief(self.world, self.disp, cls, cmd.mapped_pid, p, q_abs)
 
-    def run(self, arm, cmd, state_now, rng):
+    def run(self, arm, cmd, state_now, rng, trace=None):
+        """trace: optional list; receives one dict per step (start / look / approach) for replay and plotting."""
         cfg, d = self.cfg, self.d
         alts = self.arm_altitudes(arm)
         pl = self.planner_for(alts, self.world.objects[cmd.oid].cls)
         cur = d.dock_vp(self.home_altitude(alts))
         target = self.world.objects[cmd.oid]
+        log = trace.append if trace is not None else (lambda ev: None)
+        log({"kind": "start", "vp": int(cur), "t": 0.0})
 
         if arm.first == "oracle":
             app = pl.app[cmd.true_pid]
             t = d.TIME[cur, app]
+            log({"kind": "approach", "vp": int(app), "t": float(t), "oid": cmd.oid})
             return Result(arm.name, cmd.idx, t <= cfg.time_budget_s, t <= cfg.time_budget_s, float(t),
                           float(d.ENERGY[cur, app]), 0, "oracle")
 
@@ -120,11 +124,14 @@ class Executor:
             dets = observe(d, self.world, state_now, vp, rng, cls_filter=target.cls)
             prior_here = m / m.sum() if (arm.spatial_reid and m.sum() > 0) else None
             hit = reidentify(dets, target.appearance, cfg.reid_threshold, belief=prior_here)
+            log({"kind": "look", "vp": int(vp), "t": float(t), "step": action if wasted == 0 else "search",
+                 "seen": [int(x.oid) for x in dets], "accepted": None if hit is None else int(hit.oid)})
             if hit is not None:
                 app = pl.app[hit.pid]
                 t_fin = t + d.TIME[cur, app]
                 if t_fin > cfg.time_budget_s:
                     break
+                log({"kind": "approach", "vp": int(app), "t": float(t_fin), "oid": int(hit.oid)})
                 return Result(arm.name, cmd.idx, hit.oid == cmd.oid, True, float(t_fin),
                               float(e + d.ENERGY[cur, app]), wasted, action)
             wasted += 1

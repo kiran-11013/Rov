@@ -54,3 +54,23 @@ Step 4 writes `isaac/out/frames/VISIBILITY.md`. Send that file back (or paste it
   disable VT-d in the BIOS.
 - Objects are simple proxies (boxes and cylinders sized like chairs, mugs, laptops…). Real assets come in 3b, when
   a detector has to recognise them.
+
+## Stage 3b (replay): watch the drone fly an episode
+
+A drone built from plain USD shapes replays one command exactly as the simulator flew it. This is kinematic,
+with no flight physics yet; PX4 comes in Stage 3c. It shows trust-then-search, ours at 0.4 m only, and ours.
+Each video frame has two panels:
+- **left:** the room from above, with the trail, the stale map position and every look;
+- **right:** the onboard ZED-like camera, with the commanded object tinted green whenever it is in view.
+
+```bash
+cd ~/rov && git pull
+sudo apt install -y ffmpeg                                   # once, for the .mp4 files
+python3 isaac/export_episode.py --layout open --out isaac/out/episode.json
+~/isaacsim/python.sh isaac/fly_episode.py --episode isaac/out/episode.json --out isaac/out/fly --headless --max-frames 20   # quick test
+~/isaacsim/python.sh isaac/fly_episode.py --episode isaac/out/episode.json --out isaac/out/fly --headless
+```
+
+`export_episode.py` picks a command where the object moved and "ours" gains the most, so it is an illustration,
+not evidence. The statistics are in `sim/results/`. Use `--cmd N` to pick a specific command, and `--speed`
+and `--fps` on `fly_episode.py` to change playback speed.

@@ -111,6 +111,30 @@ class Grid:
         i = int(np.argmin(d))
         return tuple(int(v) for v in free[i])
 
+    def path(self, start, goal):
+        """Shortest 8-connected cell path from start to goal (inclusive), or [] if unreachable."""
+        dist = self.dijkstra(start)
+        if not np.isfinite(dist[goal]):
+            return []
+        cells, cur = [goal], goal
+        while cur != start:
+            i, j = cur
+            best = None
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    a, b = i + di, j + dj
+                    if (di or dj) and 0 <= a < self.nx and 0 <= b < self.ny and np.isfinite(dist[a, b]):
+                        if di and dj and (self.blocked[i + di, j] or self.blocked[i, j + dj]):
+                            continue
+                        w = (math.sqrt(2) if di and dj else 1.0) * self.res
+                        if abs(dist[a, b] + w - dist[i, j]) < 1e-6 and (best is None or dist[a, b] < dist[best]):
+                            best = (a, b)
+            if best is None:
+                return []
+            cur = best
+            cells.append(cur)
+        return cells[::-1]
+
     def dijkstra(self, start):
         dist = np.full((self.nx, self.ny), np.inf)
         dist[start] = 0.0

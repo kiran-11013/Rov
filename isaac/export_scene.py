@@ -36,10 +36,11 @@ def default_time(cfg):
     return day * 24 + 11.0
 
 
-def build_spec(cfg, t=None, n_nodes=30, yaws=(0, 90, 180, 270), sample_seed=0):
-    world = make_world(cfg.seed, **cfg.world_kwargs())
-    history = simulate_history(world, cfg, np.random.default_rng(cfg.seed))
-    drone = DroneModel(world, cfg)
+def build_spec(cfg, t=None, n_nodes=30, yaws=(0, 90, 180, 270), sample_seed=0, world=None, history=None, drone=None):
+    """world / history / drone can be passed in to reuse ones already built from the same cfg."""
+    world = world or make_world(cfg.seed, **cfg.world_kwargs())
+    history = history or simulate_history(world, cfg, np.random.default_rng(cfg.seed))
+    drone = drone or DroneModel(world, cfg)
     t = default_time(cfg) if t is None else t
     state = history.state_at(t)
 

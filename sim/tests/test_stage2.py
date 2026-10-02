@@ -77,3 +77,31 @@ def test_seeing_over_an_occluder_needs_a_steep_angle():
     target = (1.6, 1.5, 0.95)
     assert line_of_sight(w, (1.5, 3.2, 1.8), target)
     assert not line_of_sight(w, (1.5, 4.0, 1.8), target)
+
+
+def test_replay_path_matches_simulated_time():
+    import numpy as np
+    from lbyf.config import SimConfig
+    from lbyf.episode import Arm, Executor, sample_commands
+    from lbyf.experiments import setup
+    from lbyf.replay import flight_path, pose_at
+
+    cfg = SimConfig.quick()
+    ctx = setup(cfg)
+    ex = Executor(ctx.drone, ctx.world, cfg, ctx.disp, ctx.ours)
+    cmds = sample_commands(ctx.history, ctx.world, cfg, np.random.default_rng(1), ctx.train_end, ctx.test_end, 5)
+    for cmd in cmds[:6]:
+        for arm in (Arm("trust", ctx.ours, "trust"), Arm("ours", ctx.ours, "ours")):
+            trace = []
+            r = ex.run(arm, cmd, ctx.history.state_at(cmd.t0 + cmd.dt), np.random.default_rng(0), trace=trace)
+            keys, events = flight_path(ctx.drone, trace)
+            if r.success:
+                assert abs(keys[-1][0] - r.time_s) < 1e-6
+            assert all(k1[0] >= k0[0] for k0, k1 in zip(keys, keys[1:]))
+            for k0, k1 in zip(keys, keys[1:]):  # never faster than the configured speeds
+                dt = k1[0] - k0[0]
+                assert np.hypot(k1[1] - k0[1], k1[2] - k0[2]) <= cfg.v_xy * dt + 1e-6
+                assert abs(k1[3] - k0[3]) <= cfg.v_z * dt + 1e-6
+            for k in keys:  # every waypoint is in free space (the drone never cuts through furniture)
+                assert ctx.drone.grid.free(ctx.drone.grid.cell_of(k[1], k[2]))
+            assert len(pose_at(keys, keys[-1][0] / 2)) == 4
