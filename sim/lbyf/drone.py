@@ -112,7 +112,7 @@ class DroneModel:
         prm = VisParams(a50_px=cfg.vis_a50_px, slope=cfg.vis_slope)
         out = {}
         for group in sorted(set(GROUP_OF.values())):
-            width, height, top = group_footprint(group)
+            width, height, top = group_footprint(group, getattr(cfg, "laptop_open", False))
             M = np.zeros((self.n_vp, len(world.places)))
             for v in range(self.n_vp):
                 ex, ey = self.node_xy[self.vp_node[v]]

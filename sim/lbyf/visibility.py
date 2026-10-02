@@ -33,6 +33,13 @@ CLASS_DIMS = {
     "mug": ("cyl", (0.045, 0.10)),
 }
 
+OPEN_LAPTOP = ("box", (0.33, 0.23, 0.25))  # screen up: the tall part a low camera can see
+
+
+def class_dims(cls, laptop_open=False):
+    return OPEN_LAPTOP if (cls == "laptop" and laptop_open) else CLASS_DIMS[cls]
+
+
 # Classes share one visibility matrix per size group (keeps the drone model fast).
 GROUP_OF = {"chair": "tall", "cart": "tall", "bag": "medium", "box": "medium", "bin": "medium", "plant": "medium",
             "toolbox": "medium", "monitor": "medium", "stool": "medium", "laptop": "flat", "mug": "small"}
@@ -47,12 +54,12 @@ def footprint(shape, dims):
     return 2 * r, h, math.pi * r * r
 
 
-def class_footprint(cls):
-    return footprint(*CLASS_DIMS[cls])
+def class_footprint(cls, laptop_open=False):
+    return footprint(*class_dims(cls, laptop_open))
 
 
-def group_footprint(group):
-    members = [class_footprint(c) for c, g in GROUP_OF.items() if g == group]
+def group_footprint(group, laptop_open=False):
+    members = [class_footprint(c, laptop_open) for c, g in GROUP_OF.items() if g == group]
     return tuple(sum(m[i] for m in members) / len(members) for i in range(3))
 
 

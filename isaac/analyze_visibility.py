@@ -91,6 +91,16 @@ def report(spec, rows, min_pixels):
     for c in sorted({r[3] for r in rows}):
         line(f"class {c}", [r for r in rows if r[3] == c])
 
+    alts = sorted({r[1] for r in rows})
+    L.append("\n**Visible rate by class and altitude** (render / model): which objects only appear from higher up?\n")
+    L.append("| Class | " + " | ".join(f"{a:g} m" for a in alts) + " |")
+    L.append("|---|" + "---|" * len(alts))
+    for c in sorted({r[3] for r in rows}):
+        cells = []
+        for a in alts:
+            sub = [r for r in rows if r[3] == c and r[1] == a]
+            cells.append(f"{np.mean([r[5] for r in sub]):.1%} / {np.mean([r[4] for r in sub]):.1%}" if sub else "—")
+        L.append(f"| {c} | " + " | ".join(cells) + " |")
     L.append("\n**Objects visible per viewpoint, by altitude** (the quantity behind the Stage 2 altitude result):\n")
     L.append("| Altitude | Model | Render |")
     L.append("|---|---|---|")

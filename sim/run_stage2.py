@@ -266,6 +266,19 @@ def report(R, out, runtime):
             d = r["dose"]
             w(f"| {r['layout']} | {r['partition_h']} | {r['clutter_h']} | {d['trust']:.2f} | {d['ours@0.4']:.2f} | "
               f"{d['ours@1.0']:.2f} | {d['ours@1.8']:.2f} | {d['ours']:.2f} | {d['oracle']:.2f} |")
+        w("\n**Where does the altitude effect come from?** Per object class, pooled over all layouts and seeds "
+          "(success and mean time, 0.4 m only vs all altitudes):\n")
+        w("| Class | Commands | Success @0.4 m | Success, all altitudes | Mean time @0.4 m (s) | Mean time, all altitudes (s) | Median time @0.4 m | Median, all |")
+        w("|---|---|---|---|---|---|---|---|")
+        classes = sorted({c for r in lay for c in r["meta"]["cls"]})
+        for c in classes:
+            s4, sa, t4, ta = [], [], [], []
+            for r in lay:
+                m = r["meta"]["cls"] == c
+                s4 += list(r["arms"]["ours@0.4"]["succ"][m]); sa += list(r["arms"]["ours"]["succ"][m])
+                t4 += list(r["arms"]["ours@0.4"]["t"][m]); ta += list(r["arms"]["ours"]["t"][m])
+            w(f"| {c} | {len(t4)} | {np.mean(s4):.2f} | {np.mean(sa):.2f} | {np.mean(t4):.1f} | {np.mean(ta):.1f} | "
+              f"{np.median(t4):.1f} | {np.median(ta):.1f} |")
         w("\n![Altitude saving across layouts](fig_s2_1_altitude_vs_wall.png)\n")
         plots2.altitude_vs_wall(rows, os.path.join(out, "fig_s2_1_altitude_vs_wall.png"), RULE)
 
@@ -367,9 +380,12 @@ def main():
     ap.add_argument("--processes", type=int, default=4)
     ap.add_argument("--visibility", choices=("point", "extended"), default="point")
     ap.add_argument("--a50", type=float, default=200.0, help="extended model pixel threshold")
+    ap.add_argument("--laptop-open", action="store_true", help="extended model: laptops open (screen up)")
     args = ap.parse_args()
     if args.visibility == "extended":
         EXTRA.update(visibility_model="extended", vis_a50_px=args.a50)
+    if args.laptop_open:
+        EXTRA.update(laptop_open=True)
     os.makedirs(args.out, exist_ok=True)
     pkl = os.path.join(args.out, "records.pkl")
     t0 = time.time()

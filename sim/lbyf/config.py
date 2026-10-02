@@ -43,6 +43,7 @@ class SimConfig:
     visibility_model: str = "point"  # 'point' (Stages 1-2) | 'extended' (calibrated on Isaac Sim renders)
     vis_a50_px: float = 200.0        # extended model: pixel area for half-maximal detection
     vis_slope: float = 0.35          # extended model: logistic width in ln(pixels)
+    laptop_open: bool = False        # extended model: laptops open (screen up, ~0.25 m tall) instead of closed (3 cm)
 
     # Experiments
     horizons_h: tuple = (1.0, 24.0)
@@ -62,7 +63,7 @@ class SimConfig:
                 self.mass_kg, self.climb_efficiency, self.energy_weight, self.observe_time_s, self.altitudes,
                 self.fixed_altitude, self.cruise_altitude, self.vantage_spacing, self.grid_res,
                 self.path_inflation, self.approach_ring, self.max_range, self.object_height,
-                self.visibility_model, self.vis_a50_px, self.vis_slope)
+                self.visibility_model, self.vis_a50_px, self.vis_slope, self.laptop_open)
 
     @classmethod
     def quick(cls, **kw):
