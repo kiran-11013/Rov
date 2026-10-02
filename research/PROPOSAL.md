@@ -51,7 +51,7 @@ This work began with an audit of **ImpedanceGPT** (IROS 2025, arXiv 2503.02723).
 | RQ4 Grounding (secondary) | Can language references be resolved jointly with persistence, with calibrated clarification? | Accuracy, risk–coverage, clarification rate |
 
 **Headline (to confirm in flight):**
-> "With realistic perception, appearance alone gets the right instance ~70 % of the time; adding the map belief raises this by ~20 points. Choosing trust / verify / search per command saves ~9 % of time (~11 % when the object moved). Flying higher pays off for small objects on desks, and not for objects on the floor."
+> "With realistic perception, adding the map belief raises instance-level success by ~20 points over appearance alone. Choosing trust / verify / search per command saves ~7 % of time (~9 % when the object moved). Flying higher saves ~44 % for objects on desks and shelves, and costs ~5 % for objects on the floor."
 
 ## 4. System
 1. **Mapping (ZED + Orin).**
@@ -123,7 +123,7 @@ All code and reports are in `sim/` and `isaac/`. The evidence has three layers:
 | Simple visibility model | −5 to −7 % | −17 to −20 % | −1.4 to −2.3 % | ≈ 0 |
 | Detection calibrated on renders | −11 to −13 % | −15 to −19 % | −2 to −4 % | ≈ 0 |
 | Fitted real detector | −7.6 to −9.5 % | −8 to −11 % | −2.4 to −4.1 % | −0.4 to −0.8 pts |
-| Fitted real detector + repeating misses | [final run] | [final run] | [final run] | [final run] |
+| **Fitted real detector + repeating misses (final)** | **−6.3 to −8.0 %** | **−6 to −9.5 %** | **−1.3 to −2.2 %** | **−0.4 to −0.8 pts** |
 
 ### 6.2 Identity (RQ2): our strongest result
 - **Appearance is weak between look-alikes.** DINOv2 on Isaac Sim renders, 3 layouts:
@@ -164,7 +164,17 @@ YOLO-World on realistic renders, 3 layouts, operating at ≤ 0.5 background fals
   | Closed laptop | ~0 at every height | ~0 | ~0 |
   | Floor objects | slightly *worse* from 1.8 m | | |
 
-- **Simulator with the fitted detector:** mugs are found ~40 % faster with altitude, while floor objects take 10–15 % longer. An apparent 50 % saving from laptops turned out to be an artifact: the simulator gave every repeated look from the same spot a fresh chance. With realistic repeating misses: **[final run]**.
+- **Simulator with the fitted detector and repeating misses** (a missed view stays missed; no viewpoint is revisited). Time saved by allowing altitude, by where objects sit:
+
+  | Objects | Saving |
+  |---|---|
+  | On desks and shelves (mug, box, monitor, toolbox) | **44 %** |
+  | Closed laptops on desks | 239 s → 21 s |
+  | On the floor (bag, bin, cart, chair, plant, stool) | **−5 %** (slower) |
+  | All objects | 53–57 % |
+  | All objects except laptops | 25 % |
+
+  The laptop gain is geometric: the renders show a closed laptop on a desk is *never* visible from 0.4 m (0 % of views ≥ 200 px, all 3 layouts), and the real detector finds it about half the time close-up from above. The laptop share of the headline still depends on one asset and one detector, so we report it per class.
 
 **Revised claim:** choose altitude per class. The policy flies higher for small objects on raised surfaces, and stays low for floor objects.
 

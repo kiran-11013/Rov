@@ -146,6 +146,18 @@ Isaac Sim renders with realistic library models, run through YOLO-World and DINO
 - **Floor objects:** bins, plants, bags and carts are detected slightly *less* often from 1.8 m in booth and cubicle, because steep top-down views confuse the detector.
 - **Over all objects**, the altitude gain is large only in the open layout. The simulator uses one detection curve whatever the viewing angle, which overstates the benefit in enclosed layouts. The claim that holds up is the conditional one: go higher for small objects on desks, stay low for floor objects.
 
+## Final Stage 2: fitted real-detector model + repeating misses (`results/stage2_final/`)
+
+The detection model is fitted to YOLO-World on Isaac Sim renders, by size group, pixels and viewing angle (`../isaac/results/DETECTION_MODEL.md`). Within an episode, a miss from a viewpoint stays a miss, and the search does not revisit viewpoints.
+
+| Claim | Result (12 seeds per layout; 20 layouts for altitude) |
+|---|---|
+| Policy vs trust | 6.3–8.0 % faster (moved objects: 6–9.5 %); 1.3–2.2 % faster than verify-always (interval includes 0 in booth layouts). Success 0.4–0.8 points lower than trust. |
+| Map-belief re-ID, render-measured appearance | **+17 to +20 points** instance success: ours 0.73–0.74, without the prior 0.53–0.57, trust 0.72. |
+| Altitude, by where objects sit | Desks / shelves (mug, box, monitor, toolbox): **44 %** faster. Floor (bag, bin, cart, chair, plant, stool): **5 % slower**. Closed laptops: 239 s → 21 s, because they are never visible from 0.4 m in the renders. All objects: 53–57 %; without laptops: 25 %. |
+
+Repeating misses barely changed the laptop result. That gain is geometric (the desk edge hides the laptop from low down), not an artifact of repeated looks.
+
 ## Limits of this simulation
 
 - Detection depends only on line of sight and range. No lighting, motion blur or detector false positives.
