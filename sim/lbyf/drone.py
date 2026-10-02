@@ -109,7 +109,7 @@ class DroneModel:
 
     def _extended_matrices(self, world, cfg):
         """One visibility matrix per object size group (see visibility.py)."""
-        prm = VisParams(a50_px=cfg.vis_a50_px, slope=cfg.vis_slope)
+        prm = VisParams(a50_px=cfg.vis_a50_px, slope=cfg.vis_slope, p_max=getattr(cfg, "vis_pmax", 0.95))
         out = {}
         for group in sorted(set(GROUP_OF.values())):
             width, height, top = group_footprint(group, getattr(cfg, "laptop_open", False))

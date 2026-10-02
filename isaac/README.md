@@ -96,3 +96,5 @@ cd ~/rov && git pull
 ```
 
 `fly_episode.py` also accepts `--assets real`.
+
+Results (open layout): `results/open_real_DETECTION.md`.
