@@ -153,21 +153,28 @@ def run_detector(args, frames, cls_of):
 
 
 def per_viewpoint(raw, cls_of, conf):
-    """Rows (node, alt, oid, cls, max px, detected) and false positives per frame at a confidence threshold."""
-    per_vp, fps = {}, []
+    """Rows (node, alt, oid, cls, max px, detected, proposed) at a confidence threshold, plus per-frame means of
+    false positives (detections not matching their class) and background false positives (boxes on no object).
+    detected = one-to-one match with the right class; proposed = any detection >= conf overlaps the object,
+    whatever its label (what a detector + re-identification pipeline needs)."""
+    per_vp, fps, bg = {}, [], []
     for fr in raw:
         dets = [tuple(d[:3]) for d in fr["dets"]]
         ov = {int(o): [tuple(x) for x in lst] for o, lst in fr["ov"].items()}
         matched = match_from(dets, ov, cls_of, conf)
-        fps.append(sum(1 for d in dets if d[1] >= conf) - len(matched))
+        on_obj = {j for lst in ov.values() for j, _ in lst}
+        n_conf = sum(1 for d in dets if d[1] >= conf)
+        fps.append(n_conf - len(matched))
+        bg.append(sum(1 for j, d in enumerate(dets) if d[1] >= conf and j not in on_obj))
         for oid in cls_of:
             key = (fr["node"], round(fr["alt"], 3), oid)
             px = fr["gt"].get(str(oid), [0])[0]
-            cur = per_vp.setdefault(key, [0, False])
-            cur[0], cur[1] = max(cur[0], px), cur[1] or oid in matched
-    rows = [{"node": k[0], "alt": k[1], "oid": k[2], "cls": cls_of[k[2]], "px": v[0], "det": v[1]}
+            prop = any(dets[j][1] >= conf for j, _ in ov.get(oid, []))
+            cur = per_vp.setdefault(key, [0, False, False])
+            cur[0], cur[1], cur[2] = max(cur[0], px), cur[1] or oid in matched, cur[2] or prop
+    rows = [{"node": k[0], "alt": k[1], "oid": k[2], "cls": cls_of[k[2]], "px": v[0], "det": v[1], "prop": v[2]}
             for k, v in per_vp.items()]
-    return rows, float(np.mean(fps))
+    return rows, float(np.mean(fps)), float(np.mean(bg))
 
 
 def confusion(raw, cls_of):
@@ -186,40 +193,49 @@ def confusion(raw, cls_of):
 def report(spec, index, raw, cls_of, args):
     sweep = {c: per_viewpoint(raw, cls_of, c) for c in CONF_SWEEP}
     conf = args.conf if args.conf is not None else next(
-        (c for c in CONF_SWEEP if sweep[c][1] <= args.max_fp), CONF_SWEEP[-1])
-    rows, fp = sweep[conf] if conf in sweep else per_viewpoint(raw, cls_of, conf)
+        (c for c in CONF_SWEEP if sweep[c][2] <= args.max_fp), CONF_SWEEP[-1])
+    rows, fp, bg = sweep[conf] if conf in sweep else per_viewpoint(raw, cls_of, conf)
     vis = [r for r in rows if r["px"] > 0]
     alts = sorted({r["alt"] for r in rows})
     names = list(PROMPTS)
     L = ["# Stage 3b: real detector on Isaac Sim renders\n",
          f"Layout `{spec['meta']['layout']}`, {len(raw)} frames, assets `{index.get('assets', 'proxy')}`, detector "
-         f"`{args.model}` with {len(PROMPT_LIST)} prompts for {len(PROMPTS)} classes. Per viewpoint = best over the yaws. "
-         f"**Operating confidence {conf}** ({'given' if args.conf is not None else f'lowest with ≤ {args.max_fp} false positives per frame'}"
-         f"), {fp:.2f} false positives per frame.\n",
+         f"`{args.model}` with {len(PROMPT_LIST)} prompts for {len(PROMPTS)} classes. Per viewpoint = best over the yaws.\n",
+         "Two scores: **detected** = a detection with the right class label matches the object; **proposed** = any "
+         "detection overlaps it, whatever its label (enough when re-identification decides identity). False positives "
+         "are split into *background* (a box on no object) and *all* (also counting real objects given a wrong label).\n",
+         f"**Operating confidence {conf}** ({'given' if args.conf is not None else f'lowest with ≤ {args.max_fp} background false positives per frame'}): "
+         f"{bg:.2f} background / {fp:.2f} all false positives per frame.\n",
          "**Confidence sweep:**\n",
-         "| Confidence ≥ | False positives / frame | Detected, pairs ≥ 800 px | " +
-         " | ".join(f"Detected / viewpoint @{a:g} m" for a in alts) + " |",
-         "|---|---|---|" + "---|" * len(alts)]
+         "| Confidence ≥ | FP / frame (background / all) | Detected, ≥ 800 px | Proposed, ≥ 800 px | " +
+         " | ".join(f"Detected / proposed per viewpoint @{a:g} m" for a in alts) + " |",
+         "|---|---|---|---|" + "---|" * len(alts)]
     for c in CONF_SWEEP:
-        r_c, fp_c = sweep[c]
+        r_c, fp_c, bg_c = sweep[c]
         big = [r for r in r_c if r["px"] >= 800]
         cells = []
         for a in alts:
             sub = [r for r in r_c if r["alt"] == a]
-            cells.append(f"{sum(r['det'] for r in sub) / len({r['node'] for r in sub}):.1f}")
-        L.append(f"| {c} | {fp_c:.2f} | {np.mean([r['det'] for r in big]):.1%} | " + " | ".join(cells) + " |")
+            n = len({r["node"] for r in sub})
+            cells.append(f"{sum(r['det'] for r in sub) / n:.1f} / {sum(r['prop'] for r in sub) / n:.1f}")
+        L.append(f"| {c} | {bg_c:.2f} / {fp_c:.2f} | {np.mean([r['det'] for r in big]):.1%} | "
+                 f"{np.mean([r['prop'] for r in big]):.1%} | " + " | ".join(cells) + " |")
     L += ["\n**Detection rate vs visible pixels** (pairs with ≥ 1 visible pixel):\n",
-          "| Visible pixels | Pairs | Detected |", "|---|---|---|"]
+          "| Visible pixels | Pairs | Detected | Proposed |", "|---|---|---|---|"]
     for lo, hi in zip(PX_BINS[:-1], PX_BINS[1:]):
         sub = [r for r in vis if lo <= r["px"] < hi]
         if sub:
-            L.append(f"| {lo}–{hi if hi < 10 ** 9 else '∞'} | {len(sub)} | {np.mean([r['det'] for r in sub]):.1%} |")
+            L.append(f"| {lo}–{hi if hi < 10 ** 9 else '∞'} | {len(sub)} | {np.mean([r['det'] for r in sub]):.1%} | "
+                     f"{np.mean([r['prop'] for r in sub]):.1%} |")
     fit = fit_logistic([r["px"] for r in vis], [r["det"] for r in vis]) if len(vis) >= 30 else None
+    fit_p = fit_logistic([r["px"] for r in vis], [r["prop"] for r in vis]) if len(vis) >= 30 else None
     if fit:
-        L.append(f"\n**Fitted detection curve (all classes):** p_max {fit['p_max']}, a50 **{fit['a50_px']} px**, slope "
-                 f"{fit['slope']}. The simulator's render-pixel calibration used a50 = 224.5 px, slope 0.35, p_max 0.95.\n")
-    L += ["**Per class:**\n", "| Class | Pairs (≥ 1 px) | Detected | Detected when ≥ 800 px | Fitted a50 (px) |",
-          "|---|---|---|---|---|"]
+        L.append(f"\n**Fitted curves (all classes):** detected: p_max {fit['p_max']}, a50 **{fit['a50_px']} px**, slope "
+                 f"{fit['slope']}; proposed: p_max {fit_p['p_max']}, a50 **{fit_p['a50_px']} px**, slope {fit_p['slope']}. "
+                 f"The simulator's render-pixel calibration used a50 = 224.5 px, slope 0.35, p_max 0.95.\n")
+    L += ["**Per class:**\n",
+          "| Class | Pairs (≥ 1 px) | Detected | Detected when ≥ 800 px | Proposed when ≥ 800 px | Fitted a50, detected (px) |",
+          "|---|---|---|---|---|---|"]
     per_class_fit = {}
     for c in names:
         sub = [r for r in vis if r["cls"] == c]
@@ -229,7 +245,8 @@ def report(spec, index, raw, cls_of, args):
         f_c = fit_logistic([r["px"] for r in sub], [r["det"] for r in sub]) if len(sub) >= 30 else None
         per_class_fit[c] = f_c
         big_rate = f"{np.mean([r['det'] for r in big]):.1%} ({len(big)})" if big else "—"
-        L.append(f"| {c} | {len(sub)} | {np.mean([r['det'] for r in sub]):.1%} | {big_rate} | "
+        big_prop = f"{np.mean([r['prop'] for r in big]):.1%}" if big else "—"
+        L.append(f"| {c} | {len(sub)} | {np.mean([r['det'] for r in sub]):.1%} | {big_rate} | {big_prop} | "
                  f"{f_c['a50_px'] if f_c else '—'} |")
     L += ["\n**What clearly visible objects (≥ %d px in a frame) were labelled as** (most confident overlapping "
           "detection at confidence ≥ %g, any class; top 4 labels):\n" % (CLEAR_PX, args.min_conf),
@@ -247,12 +264,14 @@ def report(spec, index, raw, cls_of, args):
                          if sub else "—")
         if any(cl != "—" for cl in cells):
             L.append(f"| {c} | " + " | ".join(cells) + " |")
-    L += ["\n**Objects per viewpoint, by altitude:**\n", "| Altitude | Visible (≥ 200 px) | Detected |", "|---|---|---|"]
+    L += ["\n**Objects per viewpoint, by altitude:**\n", "| Altitude | Visible (≥ 200 px) | Detected | Proposed |",
+          "|---|---|---|---|"]
     for a in alts:
         sub = [r for r in rows if r["alt"] == a]
         n_vp = len({r["node"] for r in sub})
-        L.append(f"| {a:g} m | {sum(r['px'] >= 200 for r in sub) / n_vp:.1f} | {sum(r['det'] for r in sub) / n_vp:.1f} |")
-    return "\n".join(L) + "\n", rows, conf, fit, per_class_fit
+        L.append(f"| {a:g} m | {sum(r['px'] >= 200 for r in sub) / n_vp:.1f} | {sum(r['det'] for r in sub) / n_vp:.1f} | "
+                 f"{sum(r['prop'] for r in sub) / n_vp:.1f} |")
+    return "\n".join(L) + "\n", rows, conf, {"detected": fit, "proposed": fit_p}, per_class_fit
 
 
 def main():
@@ -261,7 +280,7 @@ def main():
     ap.add_argument("--frames", required=True)
     ap.add_argument("--model", default="yolov8x-worldv2.pt")
     ap.add_argument("--conf", type=float, default=None, help="operating confidence (default: chosen by --max-fp)")
-    ap.add_argument("--max-fp", type=float, default=0.5, help="false positives per frame allowed at the operating point")
+    ap.add_argument("--max-fp", type=float, default=0.5, help="background false positives per frame allowed at the operating point")
     ap.add_argument("--min-conf", type=float, default=0.05, help="lowest confidence kept from the detector")
     ap.add_argument("--imgsz", type=int, default=1280)
     ap.add_argument("--viz", type=int, default=8, help="annotated example images to write")
