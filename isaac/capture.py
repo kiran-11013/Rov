@@ -176,6 +176,14 @@ frames = [(vp, yaw) for vp in SPEC["viewpoints"] for yaw in vp["yaws"]]
 if args.max_frames:
     frames = frames[:args.max_frames]
 index = {"spec": os.path.abspath(args.spec), "camera": CAM, "frames": []}
+# Warm-up: the first rendered frames can arrive before the render variables are ready (empty segmentation),
+# so render a few throw-away frames at the first pose before recording anything.
+if frames:
+    vp0, yaw0 = frames[0]
+    set_pose(vp0["x"], vp0["y"], vp0["alt"], yaw0, CAM["pitch_down_deg"])
+    for _ in range(3):
+        step()
+verbose = len(frames) <= 20
 t0 = time.time()
 for i, (vp, yaw) in enumerate(frames):
     set_pose(vp["x"], vp["y"], vp["alt"], yaw, CAM["pitch_down_deg"])
@@ -201,9 +209,10 @@ for i, (vp, yaw) in enumerate(frames):
         np.savez_compressed(os.path.join(args.out, f"seg_{i:05d}.npz"), ids=ids.astype(np.uint32),
                             depth=np.nan_to_num(depth, posinf=0).astype(np.float16),
                             id_to_path=json.dumps(id_to_path))
-    if i % 20 == 0 or i == len(frames) - 1:
+    if verbose or i % 20 == 0 or i == len(frames) - 1:
         rate = (i + 1) / max(time.time() - t0, 1e-6)
-        log(f"frame {i + 1}/{len(frames)} ({rate:.1f} fps): {len(pixels)} objects visible")
+        log(f"frame {i + 1}/{len(frames)} ({rate:.1f} fps) node {vp['node']} alt {vp['alt']:g} m yaw {yaw}: "
+            f"{len(pixels)} objects visible")
         with open(os.path.join(args.out, "index.json"), "w") as fh:
             json.dump(index, fh)
 
